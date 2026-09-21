@@ -1,0 +1,268 @@
+name: AI review gate
+
+# PRs into `main`. Required check name is the `ai-review` job. Trivial
+# diffs and fail-open (billing/auth) must still make that job green so it
+# cannot hang. Merge does not deploy.
+#
+# Split (pwn_request): collect checks out the PR and never sees WIF or the
+# API key. review checks out the default/base branch and runs scripts from
+# that tree only. Never run python from the PR head in a job that holds
+# credentials. persist-credentials is false on both checkouts.
+#
+# Residual: a PR that *edits this workflow* can still add credentials to
+# collect. Leads must treat .github/workflows diffs as Important. Full
+# isolation is workflow_run (later); this split is the local paper fix.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  trivial:
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: check
+        run: |
+          changed=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          echo "$changed"
+          non_trivial=$(echo "$changed" | grep -Ev '\.(md|txt|lock|json)$|requirements.*\.txt$|package-lock\.json$|ci/.*\.ya?ml$' || true)
+          if [ -z "$non_trivial" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  collect:
+    name: collect
+    needs: [trivial]
+    if: |
+      always() && (
+        (github.event_name == 'pull_request' && needs.trivial.result == 'success' && needs.trivial.outputs.skip == 'false') ||
+        (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '@claude review'))
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || format('refs/pull/{0}/head', github.event.issue.number) }}
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Get the diff
+        id: diff
+        run: |
+          set -euo pipefail
+          base="${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}"
+          git fetch origin "$base"
+          git diff "origin/${base}...HEAD" > pr.diff
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+
+      - name: Static analysis — Semgrep (diff only)
+        run: |
+          set -euo pipefail
+          pip install semgrep
+          base="${{ steps.diff.outputs.base }}"
+          merge_base="$(git merge-base "origin/${base}" HEAD)"
+          semgrep --config p/python --config p/javascript --json --output semgrep-results.json \
+            --baseline-commit "$merge_base" . || true
+
+      - name: Static analysis — Bandit (changed Python files only)
+        run: |
+          set -euo pipefail
+          base="${{ steps.diff.outputs.base }}"
+          changed_py=$(git diff --name-only "origin/${base}...HEAD" -- '*.py' || true)
+          if [ -n "$changed_py" ]; then
+            pip install bandit
+            # shellcheck disable=SC2086
+            bandit -f json -o bandit-results.json $changed_py || true
+          else
+            echo '{"results":[]}' > bandit-results.json
+          fi
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pr-review-inputs
+          path: |
+            pr.diff
+            semgrep-results.json
+            bandit-results.json
+          if-no-files-found: error
+
+  review:
+    name: review
+    needs: [collect]
+    if: always() && needs.collect.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: pr-review-inputs
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Authenticate to GCP
+        id: auth
+        continue-on-error: true
+        uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_WIF_SERVICE_ACCOUNT_AI_REVIEW }}
+
+      - uses: google-github-actions/setup-gcloud@6a7c903a70c8625ed6700fa299f5ddb4ca6022e9 # v2.1.5
+        if: steps.auth.outcome == 'success'
+        continue-on-error: true
+
+      - name: Fetch Anthropic API key from Secret Manager
+        if: steps.auth.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          KEY="$(gcloud secrets versions access latest --secret=ai-review-anthropic-key)"
+          echo "::add-mask::${KEY}"
+          echo "ANTHROPIC_API_KEY=${KEY}" >> "$GITHUB_ENV"
+
+      - run: pip install anthropic
+
+      - name: Run two-pass review
+        run: python3 scripts/ai_review.py
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          SPEND_CAP_INR: "4500"
+          SPEND_SO_FAR_INR: ${{ vars.AI_REVIEW_SPEND_SO_FAR_INR }}
+
+      - name: Post findings
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        continue-on-error: true
+        with:
+          script: |
+            const fs = require('fs');
+            if (!fs.existsSync('review-result.json')) return;
+            const result = JSON.parse(fs.readFileSync('review-result.json', 'utf8'));
+            const marker = '<!-- phase3-ai-review -->';
+            const important = (result.findings || []).filter(f => f.severity === 'important');
+            const nits = (result.findings || []).filter(f => f.severity === 'nit');
+            let body = `${marker}\n### AI review\n\n`;
+            if (result.fail_open) {
+              body += `Skipped (fail-open): ${result.reason || 'auth/billing/API error'}. This does not block merge.\n`;
+            } else if (important.length) {
+              body += `**${important.length} Important finding(s) — must be resolved:**\n`;
+              for (const f of important) body += `- \`${f.file}:${f.line}\` — ${f.issue}\n`;
+            } else {
+              body += `No Important findings.\n`;
+            }
+            if (nits.length) {
+              body += `\n**${nits.length} nit(s), non-blocking:**\n`;
+              for (const f of nits.slice(0, 5)) body += `- \`${f.file}:${f.line}\` — ${f.issue}\n`;
+            }
+            const issue_number = context.issue.number;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner, repo: context.repo.repo, issue_number,
+            });
+            const prev = comments.find(c => c.user.type === 'Bot' && c.body.includes(marker));
+            if (prev) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                comment_id: prev.id, body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo, issue_number, body,
+              });
+            }
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: review-result
+          path: review-result.json
+          if-no-files-found: warn
+
+  ai-review:
+    name: ai-review
+    needs: [trivial, collect, review]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        continue-on-error: true
+        with:
+          name: review-result
+      - name: Gate
+        run: |
+          set -euo pipefail
+          trivial="${{ needs.trivial.result }}"
+          skip="${{ needs.trivial.outputs.skip }}"
+          collect="${{ needs.collect.result }}"
+          review="${{ needs.review.result }}"
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "$trivial" = "success" ] && [ "$skip" = "true" ]; then
+            echo "trivial diff — AI review skipped, gate green"
+            exit 0
+          fi
+          if [ "${{ github.event.pull_request.draft }}" = "true" ]; then
+            echo "draft PR — skipped, gate green"
+            exit 0
+          fi
+          if [ "$collect" = "failure" ] || [ "$collect" = "cancelled" ]; then
+            echo "collect failed — fail-open (tooling flake must not block merge)"
+            exit 0
+          fi
+          if [ "$review" = "skipped" ]; then
+            echo "review skipped, gate green"
+            exit 0
+          fi
+          if [ "$review" != "success" ]; then
+            echo "review job failed unexpectedly"; exit 1
+          fi
+          if [ ! -f review-result.json ]; then
+            echo "no result file — fail-open"
+            exit 0
+          fi
+          python3 - <<'PY'
+          import json, sys
+          data = json.load(open("review-result.json"))
+          if data.get("fail_open"):
+              print("fail-open:", data.get("reason", ""))
+              sys.exit(0)
+          important = [f for f in data.get("findings", []) if f.get("severity") == "important"]
+          if important:
+              print(f"{len(important)} Important finding(s)")
+              sys.exit(1)
+          print("no Important findings")
+          PY

@@ -1,0 +1,41 @@
+name: mutation
+
+# Ratchet, not a wall: mutation runs are minutes to tens of minutes and the
+# score moves slowly. Not a required PR check. mutmut 3.x has no `--ci` flag
+# and no `mutmut html`; we use `mutmut run` + `export-cicd-stats`, generate
+# HTML ourselves, and fail the job if the score drops below the recorded
+# post-kill ratchet (killed / (killed + survived) = 98.0%; honest baseline
+# before killer tests was 81.3% on 2026-09-06). See
+# tests/outcomes/MUTATION_BASELINE.md.
+on:
+  schedule:
+    - cron: "0 4 * * 1"  # weekly, Monday 04:00 UTC
+  workflow_dispatch:
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install test + mutmut dependencies
+        run: python tests/ci/pipeline.py install-mutation
+
+      - name: mutmut run
+        run: python tests/ci/pipeline.py mutation
+
+      - name: Upload HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutmut-report
+          path: |
+            mutants/mutmut-report.html
+            mutants/mutmut-cicd-stats.json
+          if-no-files-found: warn

@@ -1,0 +1,19 @@
+{
+  "id": "knowledge-store-ingest",
+  "kind": "cloudrun-job",
+  "cloud_run_job": "knowledge-store-ingest",
+  "image_group": "knowledge-store",
+  "verb": "ingest",
+  "command": ["python"],
+  "args": ["-m", "knowledge_store.run", "ingest"],
+  "cpu": "2",
+  "memory": "4Gi",
+  "task_timeout": "24h",
+  "tasks": 1,
+  "parallelism": 1,
+  "max_retries": 0,
+  "needs_entry_id": true,
+  "env_from_target": ["GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_LOCATION"],
+  "secrets_via": "runtime-secret-reader",
+  "secret_names": ["KNOWLEDGE_STORE_GCS_BUCKET"]
+}

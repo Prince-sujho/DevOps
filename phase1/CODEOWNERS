@@ -1,0 +1,10 @@
+# Lead gate on GitHub `main`. Everyone PRs. GitHub uses the last matching
+# pattern. An approval from ANY owner on that line satisfies Code Owners.
+#
+# * is Leads only. @Prince-sujho is not a code owner. If Prince is added
+# to *, his own approve would satisfy the gate.
+
+*                               @arnavtayal @abhishektayal2802
+
+/ci/                            @arnavtayal @abhishektayal2802
+.github/                        @arnavtayal @abhishektayal2802

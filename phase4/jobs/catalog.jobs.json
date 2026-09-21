@@ -1,0 +1,53 @@
+{
+  "region": "asia-south1",
+  "registry": "asia-south1-docker.pkg.dev/sujho-dev/services",
+  "prod_project": "sujho-478914",
+  "dev_project": "sujho-dev",
+  "preprod_project": "sujho-preprod",
+  "short_sha_len": 7,
+  "pilot": "knowledge-store-sessions",
+  "form_repo": "sujho",
+  "note": "Dropdown is generated from jobs[].id. GitHub cannot scan other repos at click time.",
+  "image_groups": {
+    "knowledge-store": {
+      "image": "knowledge-store-jobs",
+      "dockerfile": "knowledge_store/Dockerfile",
+      "gitlinks": ["knowledge_store", "infra"],
+      "source_repo": "knowledge-store",
+      "runtime_sa": "knowledge-store-run"
+    }
+  },
+  "jobs": [
+    {
+      "id": "knowledge-store-ingest",
+      "verb": "ingest",
+      "needs_entry_id": true,
+      "memory": "4Gi"
+    },
+    {
+      "id": "knowledge-store-remove",
+      "verb": "remove",
+      "needs_entry_id": true,
+      "memory": "2Gi"
+    },
+    {
+      "id": "knowledge-store-sessions",
+      "verb": "sessions",
+      "needs_entry_id": false,
+      "memory": "2Gi",
+      "pilot": true
+    },
+    {
+      "id": "knowledge-store-import-ncert",
+      "verb": "import-ncert",
+      "needs_entry_id": false,
+      "memory": "2Gi"
+    },
+    {
+      "id": "knowledge-store-import-educart",
+      "verb": "import-educart",
+      "needs_entry_id": false,
+      "memory": "2Gi"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sujho-cloudrun-job.json",
+  "title": "Sujho Cloud Run job label",
+  "type": "object",
+  "required": ["id", "kind", "cloud_run_job", "image_group", "command", "args"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "kind": { "const": "cloudrun-job" },
+    "cloud_run_job": { "type": "string" },
+    "image_group": { "type": "string" },
+    "verb": { "type": "string" },
+    "command": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "args": { "type": "array", "items": { "type": "string" } },
+    "cpu": { "type": "string" },
+    "memory": { "type": "string" },
+    "task_timeout": { "type": "string" },
+    "tasks": { "type": "integer", "minimum": 1 },
+    "parallelism": { "type": "integer", "minimum": 1 },
+    "max_retries": { "type": "integer", "minimum": 0 },
+    "needs_entry_id": { "type": "boolean" },
+    "env_from_target": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "secrets_via": { "const": "runtime-secret-reader" },
+    "secret_names": { "type": "array", "items": { "type": "string" } }
+  }
+}

@@ -1,0 +1,51 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.6
+    hooks:
+      - id: ruff
+        name: ruff (lint)
+        args: [--no-fix]
+      # No ruff-format hook: this repo has not adopted a formatter yet; see
+      # tests/outcomes/UNCERTAINTY.md (Static analysis section). Adding one would touch existing application source,
+      # which is out of scope for this task.
+
+  - repo: local
+    hooks:
+      - id: mypy-user-service
+        name: mypy --strict (user_service/app/src)
+        # Uses the repo .venv directly (not a pre-commit-managed env) because
+        # mypy needs to resolve cross-submodule imports (infra.*, etc.) that
+        # only exist relative to the repo root's sys.path setup. See
+        # tests/outcomes/UNCERTAINTY.md (Static analysis section) for why mirrors-mypy was not used instead.
+        entry: .venv/bin/mypy --strict --follow-imports=silent user_service/app/src
+        language: system
+        pass_filenames: false
+        always_run: true
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        name: detect-secrets
+        args:
+          - --baseline
+          - .secrets.baseline
+          - --exclude-files
+          - '\.venv/|(^|/)\.git/|(^|/)__pycache__/|(^|/)Data/|(^|/)evals/reports/|(^|/)\.(mypy|ruff|pytest)_cache/|^\.env$'
+        exclude: '\.secrets\.baseline$'
+
+  - repo: local
+    hooks:
+      - id: check-test-methods
+        name: check critical-module test coverage markers
+        entry: .venv/bin/python tests/tooling/check_test_methods.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: check-assertions
+        name: check for weak-only test assertions
+        entry: .venv/bin/python tests/tooling/check_assertions.py
+        language: system
+        pass_filenames: false
+        always_run: true

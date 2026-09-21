@@ -1,0 +1,143 @@
+name: PR checks
+
+# Target: PRs into `main` on Sujho/sujho only. Required check name is the
+# `pr-checks` job. The suite is tests/ci/pipeline.py (836 tests + coverage
+# floors). Docs-only PRs skip the suite; the gate job still succeeds so a
+# required check does not hang. Do not require this job until it has run once.
+# Merge does not deploy.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr-checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - id: filter
+        uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3.0.3
+        with:
+          filters: |
+            code:
+              - '**/*.py'
+              - 'requirements*.txt'
+              - 'pyproject.toml'
+              - 'tests/**'
+              - 'Eval-Suite/**'
+              - 'user_service/**'
+              - 'text_agent/**'
+              - 'whatsapp_adapter/**'
+              - 'document_worker/**'
+              - 'redirect_service/**'
+              - 'knowledge_store/**'
+              - 'infra/**'
+              - 'ci/**'
+              - '.github/workflows/**'
+
+  suite:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.13"
+
+      - name: Install root + per-submodule requirements
+        run: python tests/ci/pipeline.py install
+
+      - name: Blocking pipeline (static, secrets, unit, api, eval-checks, gates, coverage)
+        run: python tests/ci/pipeline.py static secrets unit api eval-checks gates coverage
+
+      # Integration and e2e need a Firestore emulator (gcloud + JRE). Best-effort
+      # so the required `pr-checks` gate is not blocked on that environment.
+      - name: Set up JRE for Firestore emulator (integration/e2e, best-effort)
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: "17"
+        continue-on-error: true
+
+      - name: "integration tests (best-effort: needs Firestore emulator + JRE)"
+        continue-on-error: true
+        run: python tests/ci/pipeline.py integration
+
+      - name: "e2e tests (best-effort: needs Firestore emulator + JRE)"
+        continue-on-error: true
+        run: python tests/ci/pipeline.py e2e
+
+      - name: diff coverage gate (changed lines only)
+        run: python tests/ci/pipeline.py diff-cover --base-branch origin/${{ github.base_ref }}
+
+      - name: Comment coverage on the PR
+        if: always()
+        continue-on-error: true
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const fs = require('fs');
+            if (!fs.existsSync('coverage.json')) return;
+            const cov = JSON.parse(fs.readFileSync('coverage.json', 'utf8'));
+            const pct = cov.totals && cov.totals.percent_covered;
+            if (pct == null) return;
+            const marker = '<!-- phase2-coverage -->';
+            const body = `${marker}\nCoverage: **${Number(pct).toFixed(2)}%** (floors in tests/outcomes/pytest/coverage_floors.json)`;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const prev = comments.find(c => c.user.type === 'Bot' && c.body.includes(marker));
+            if (prev) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                comment_id: prev.id, body,
+              });
+              return;
+            }
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: context.issue.number, body,
+            });
+
+  # Single required-check name. Skipped suite on docs-only PRs must not
+  # leave this pending forever.
+  pr-checks:
+    name: pr-checks
+    needs: [changes, suite]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate
+        run: |
+          set -euo pipefail
+          code="${{ needs.changes.outputs.code }}"
+          suite="${{ needs.suite.result }}"
+          changes="${{ needs.changes.result }}"
+          if [ "$changes" != "success" ]; then
+            echo "changes job failed"; exit 1
+          fi
+          if [ "$code" != "true" ]; then
+            echo "non-code PR — suite skipped, gate green"
+            exit 0
+          fi
+          if [ "$suite" != "success" ]; then
+            echo "suite=$suite"
+            exit 1
+          fi

@@ -1,0 +1,204 @@
+# admin-deploy-only.yaml — manual Cloud Build only (no push trigger).
+# No image build. Deploy the digest of sha-<7 of _SHORT_SHA>. Confirm
+# preprod-approved still points at that same digest (no floating-tag TOCTOU).
+# _IMAGE_DIGEST if set must match. prod-live is applied when _TARGET_PROJECT
+# is sujho-478914 (derived from the project, not a separate _ENV knob).
+
+dependencies:
+  - gitSource:
+      repository:
+        developerConnect: projects/${PROJECT_ID}/locations/asia-south1/connections/${_DC_CONNECTION}/gitRepositoryLinks/sujho-sujho
+      revision: ${_COMMIT_SHA}
+      depth: 1
+      destPath: .
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+substitutions:
+  _SERVICE_NAME: admin
+  _IMAGE: admin
+  _REGION: asia-south1
+  _REGISTRY: asia-south1-docker.pkg.dev/sujho-dev/services
+  _TARGET_PROJECT: sujho-preprod
+  _COMMIT_SHA: ""
+  _SHORT_SHA: ""
+  _DC_CONNECTION: sujho-github-dc
+  _RUNTIME_SERVICE_ACCOUNT: ""
+  _IMAGE_DIGEST: ""
+
+steps:
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
+    id: require-sha
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        if [ -z "${_COMMIT_SHA}" ] || [ -z "${_SHORT_SHA}" ]; then
+          echo "Refuse: _COMMIT_SHA/_SHORT_SHA empty. Pass them from the GitHub form."
+          echo "Cloud Build trigger builtins (COMMIT_SHA/SHORT_SHA/TRIGGER_NAME) are not used."
+          exit 1
+        fi
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
+    id: resolve-digest
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        SHORT="${_SHORT_SHA}"
+        if [ -z "$$SHORT" ]; then
+          echo "Refuse: _SHORT_SHA empty."
+          exit 1
+        fi
+        SHA_DIGEST=$$(gcloud artifacts docker images describe \
+          "${_REGISTRY}/${_IMAGE}:sha-$$SHORT" \
+          --format="value(image_summary.digest)")
+        if [ -z "$$SHA_DIGEST" ]; then
+          echo "Refuse: no image ${_IMAGE}:sha-$$SHORT — this commit was never built."
+          exit 1
+        fi
+        TAG_DIGEST=$$(gcloud artifacts docker images describe \
+          "${_REGISTRY}/${_IMAGE}:preprod-approved" \
+          --format="value(image_summary.digest)")
+        if [ -z "$$TAG_DIGEST" ]; then
+          echo "No image tagged preprod-approved — nothing eligible to deploy."
+          exit 1
+        fi
+        if [ "$$SHA_DIGEST" != "$$TAG_DIGEST" ]; then
+          echo "Refuse: sha-$$SHORT ($$SHA_DIGEST) is not preprod-approved ($$TAG_DIGEST). Tag moved or this commit was not approved."
+          exit 1
+        fi
+        if [ -n "${_IMAGE_DIGEST}" ] && [ "${_IMAGE_DIGEST}" != "$$SHA_DIGEST" ]; then
+          echo "Refuse: passed _IMAGE_DIGEST does not match sha-$$SHORT."
+          exit 1
+        fi
+        echo "Deploying pinned digest: $$SHA_DIGEST (sha-$$SHORT, confirmed preprod-approved)"
+        printf '%s' "$$SHA_DIGEST" > /workspace/deploy.digest
+        COMMIT="${_COMMIT_SHA}"
+        if [ -z "$$COMMIT" ]; then
+          echo "Refuse: _COMMIT_SHA empty."
+          exit 1
+        fi
+        echo "Promoted commit: $$COMMIT"
+        printf '%s' "$$COMMIT" > /workspace/deploy.commit
+    waitFor: [require-sha]
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
+    id: deploy
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        SA="${_RUNTIME_SERVICE_ACCOUNT}"
+        if [ -z "$$SA" ]; then
+          SA="${_SERVICE_NAME}-run@${_TARGET_PROJECT}.iam.gserviceaccount.com"
+        fi
+        DEPLOY_DIGEST=$$(cat /workspace/deploy.digest)
+        DEPLOY_COMMIT=$$(cat /workspace/deploy.commit)
+        IMAGE_REF="${_REGISTRY}/${_IMAGE}@$${DEPLOY_DIGEST}"
+        echo "Deploying image: $$IMAGE_REF"
+        echo "Release commit: $$DEPLOY_COMMIT"
+        echo "Runtime SA: $$SA"
+        if [ "${_TARGET_PROJECT}" = "sujho-preprod" ]; then
+          MIN_INSTANCES=0
+        else
+          MIN_INSTANCES=1
+        fi
+        echo "min-instances=$$MIN_INSTANCES (Pre-Prod is 0)"
+        gcloud run deploy "${_SERVICE_NAME}" \
+                  --project="${_TARGET_PROJECT}" \
+                  --region="${_REGION}" \
+                  --image="$$IMAGE_REF" \
+                  --platform=managed \
+                  --service-account="$$SA" \
+                  --no-allow-unauthenticated \
+                  --ingress=internal-and-cloud-load-balancing \
+                  --clear-secrets \
+                  --update-env-vars="GOOGLE_CLOUD_PROJECT=${_TARGET_PROJECT},GOOGLE_CLOUD_LOCATION=${_REGION},RELEASE_COMMIT_SHA=$$DEPLOY_COMMIT,RELEASE_IMAGE_DIGEST=$$DEPLOY_DIGEST" \
+                  --min-instances=$$MIN_INSTANCES \
+                  --max-instances=2 \
+                  --cpu=1 \
+                  --memory=256Mi \
+                  --timeout=240s \
+                  --no-traffic \
+                  --quiet
+        REV=$$(gcloud run services describe "${_SERVICE_NAME}" --project="${_TARGET_PROJECT}" --region="${_REGION}" --format='value(status.latestReadyRevisionName)')
+        if [ -z "$$REV" ]; then
+          echo "No ready revision after deploy."
+          exit 1
+        fi
+        printf '%s' "$$REV" > /workspace/deploy.revision
+        echo "Created revision $$REV with no user traffic"
+
+                PROJECT_NUMBER=$$(gcloud projects describe "${_TARGET_PROJECT}" --format='value(projectNumber)')
+                gcloud run services add-iam-policy-binding "${_SERVICE_NAME}" \
+                  --project="${_TARGET_PROJECT}" \
+                  --region="${_REGION}" \
+                  --member="serviceAccount:service-$${PROJECT_NUMBER}@gcp-sa-iap.iam.gserviceaccount.com" \
+                  --role=roles/run.invoker \
+                  --quiet
+    waitFor: [resolve-digest]
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
+    id: verify
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        EXPECTED_COMMIT=$$(cat /workspace/deploy.commit)
+        EXPECTED_DIGEST=$$(cat /workspace/deploy.digest)
+        REV=$$(cat /workspace/deploy.revision)
+        echo "Expected commit: $$EXPECTED_COMMIT"
+        echo "Expected digest: $$EXPECTED_DIGEST"
+        echo "Revision (no user traffic yet): $$REV"
+        for i in $$(seq 1 15); do
+          if [ -n "$$REV" ] && gcloud run revisions describe "$$REV" --project="${_TARGET_PROJECT}" --region="${_REGION}" --format=json | python3 -c 'import json,sys; rev=json.load(sys.stdin); ready=next((c.get("status") for c in rev.get("status",{}).get("conditions",[]) if c.get("type")=="Ready"),""); env={e["name"]: e.get("value","") for e in rev.get("spec",{}).get("containers",[{}])[0].get("env",[])}; print("ready=%s commit=%s digest=%s" % (ready, env.get("RELEASE_COMMIT_SHA",""), env.get("RELEASE_IMAGE_DIGEST",""))); raise SystemExit(0 if ready=="True" and env.get("RELEASE_COMMIT_SHA")==sys.argv[1] and env.get("RELEASE_IMAGE_DIGEST")==sys.argv[2] else 1)' "$$EXPECTED_COMMIT" "$$EXPECTED_DIGEST"; then
+            echo "Deployment verified: revision is Ready and matches expected release. Users still on the previous revision."
+            exit 0
+          fi
+          echo "Attempt $$i/15 did not match expected release."
+          sleep 3
+        done
+        echo "Verification failed. Traffic was not shifted."
+        exit 1
+    waitFor: [deploy]
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
+    id: shift-traffic
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        REV=$$(cat /workspace/deploy.revision)
+        echo "Shifting 100% traffic to $$REV"
+        gcloud run services update-traffic "${_SERVICE_NAME}" \
+          --project="${_TARGET_PROJECT}" \
+          --region="${_REGION}" \
+          --to-revisions="$$REV=100" \
+          --quiet
+    waitFor: [verify]
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
+    id: tag-prod-live
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        if [ "${_TARGET_PROJECT}" = "sujho-478914" ]; then
+          DIGEST=$$(cat /workspace/deploy.digest)
+          gcloud artifacts docker tags add \
+            "${_REGISTRY}/${_IMAGE}@$$DIGEST" \
+            "${_REGISTRY}/${_IMAGE}:prod-live"
+          echo "Tagged $$DIGEST as prod-live"
+        else
+          echo "Not prod (_TARGET_PROJECT=${_TARGET_PROJECT}) — skipping prod-live tag"
+        fi
+    waitFor: [shift-traffic]
+
+timeout: 1200s

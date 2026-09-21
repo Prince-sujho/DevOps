@@ -1,0 +1,1892 @@
+{
+  "suites": {
+    "unit": {
+      "tests/unit/user_service/test_ambassadors.py::test_tier_reached_below_first_rung_is_none": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_ambassadors.py::test_next_tier_below_first_rung_is_campus_ambassador": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_ambassadors.py::test_tier_reached_exactly_at_each_rung": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_ambassadors.py::test_next_tier_at_top_rung_is_none": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_ambassadors.py::test_next_tier_between_rungs": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_ambassadors.py::test_negative_points_have_not_reached_a_tier": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_ambassadors.py::test_tier_reached_and_next_tier_are_always_consistent": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_ambassadors.py::test_mint_handle_name_with_no_latin_letters_raises": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_ambassadors.py::test_mint_handle_punctuation_only_name_raises": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_ambassadors.py::test_mint_handle_empty_name_raises": {
+        "result": "failed",
+        "message": "IndexError: list index out of range"
+      },
+      "tests/unit/user_service/test_ambassadors.py::test_mint_handle_strips_leading_and_trailing_whitespace": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_ambassadors.py::test_mint_handle_single_character_first_name": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_ambassadors.py::test_mint_handle_matches_documented_arjun_form": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_ambassadors.py::test_mint_handle_retries_until_the_registry_reports_a_free_handle": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_ambassadors.py::test_minted_handle_always_has_a_four_char_alphabet_suffix": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_ambassadors.py::test_enrolled_raises_when_a_registry_entry_has_no_profile": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_ambassadors.py::test_row_tier_at_first_rung_is_the_first_named_tier": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_ambassadors.py::test_roster_started_is_points_plus_abandoned_starts": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_ambassadors.py::test_roster_with_no_starts_and_no_onboards_is_zero": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_ambassadors.py::test_status_splits_student_and_teacher_referrals_and_computes_points_to_next": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_ambassadors.py::test_status_below_first_rung_has_no_tier_and_points_to_ambassador": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_ambassadors.py::test_status_settles_a_pending_mint_before_reporting_balance": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_ambassadors.py::test_detail_started_is_referred_plus_pending_starts": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_attribution.py::test_first_registered_mention_wins_even_when_an_unregistered_mention_appears_earlier": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_attribution.py::test_first_of_two_registered_mentions_wins": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_attribution.py::test_no_mentions_returns_none": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_attribution.py::test_mentions_none_of_which_are_registered_returns_none": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_attribution.py::test_empty_string_returns_none": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_attribution.py::test_empty_registry_returns_none_even_with_mentions": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_attribution.py::test_uppercase_mention_matches_normalized_lowercase_handle": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_attribution.py::test_leading_at_in_the_registry_is_not_required": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_attribution.py::test_a_lone_registered_mention_is_found_regardless_of_surrounding_prose": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_attribution.py::test_resolve_referrer_first_text_with_a_registered_mention_wins": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_attribution.py::test_resolve_referrer_skips_earlier_texts_that_only_mention_unregistered_handles": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_attribution.py::test_resolve_referrer_no_registered_mention_in_any_text": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_attribution.py::test_resolve_referrer_empty_texts": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_attribution.py::test_resolve_referrer_uppercase_mention_across_texts": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_attribution.py::test_derive_starts_records_the_first_registered_mention_timestamp": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_attribution.py::test_derive_starts_two_in_flight_users_both_count": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_attribution.py::test_derive_starts_unregistered_mention_is_omitted": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_attribution.py::test_derive_starts_no_mention_is_omitted": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_attribution.py::test_derive_starts_empty_buffer_is_empty": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_activity_state_none_last_message_is_never": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_activity_state_exactly_on_the_window_boundary_is_active": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_activity_state_one_ms_inside_the_window_is_active": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_activity_state_one_ms_outside_the_window_is_dormant": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_activity_state_message_at_now_is_active": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_any_age_inside_the_closed_window_is_active": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_any_age_past_the_window_is_dormant": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_matches_empty_query_matches_everything": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_matches_multi_token_requires_every_token": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_matches_unicode_name_under_casefold": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_matches_unknown_token_rejects": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_matches_grade_filter_in_isolation": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_matches_subject_filter_in_isolation": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_matches_activity_filter_in_isolation": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_matches_attribution_filter_in_isolation": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_matches_blocked_filter_in_isolation": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_matches_all_filters_combined": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_blank_queries_match_any_name": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_sort_key_name_orders_alphabetically_by_casefold": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_sort_key_identical_names_are_a_stable_tie": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_sort_key_last_active_puts_none_after_every_real_timestamp": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_none_last_message_sorts_after_any_real_timestamp_on_last_active": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_sort_key_newest_puts_later_created_first": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_sort_key_session_count_puts_higher_count_first": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_directory_entry_uses_whatsapp_activity_and_clock_for_state": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_directory_entry_outside_the_window_is_dormant": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_directory_entry_never_messaged_is_never": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_directory_page_blocked_filter_returns_only_blocked_identities": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_directory_page_open_filter_excludes_blocked_identities": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_directory.py::test_directory_page_newest_sort_and_activity_use_the_clock": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_earned_inr_below_first_tier_is_zero": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_earned_inr_exactly_at_each_tier": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_earned_inr_one_below_each_tier": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_earned_inr_one_above_each_tier": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_earned_inr_far_above_top_tier_does_not_invent_a_fifth_rung": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_earned_inr_negative_points_cross_no_rung": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_earned_inr_equals_sum_of_every_crossed_rung": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_spent_inr_empty_list_is_zero": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_spent_inr_only_failed_cards_restore_credit": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_spent_inr_only_pending_cards_debit": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_spent_inr_only_succeeded_cards_debit": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_spent_inr_mix_excludes_failed": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_failed_card_never_contributes_to_spend": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_balance_inr_is_earned_minus_non_failed_spend": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_balance_inr_failed_card_does_not_reduce_balance": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_balance_inr_can_go_negative_when_spend_exceeds_earned": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_balance_equals_earned_minus_non_failed_spend_for_all_inputs": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_offered_amounts_inactive_product_is_empty": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_offered_amounts_none_amount_restrictions_is_empty": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_offered_amounts_empty_how_to_use_instructions_is_empty": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_offered_amounts_balance_below_min_is_empty": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_offered_amounts_flexible_balance_exactly_min": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_offered_amounts_flexible_balance_on_a_ladder_rung": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_offered_amounts_flexible_includes_exact_balance_between_rungs": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_offered_amounts_flexible_balance_above_max_is_capped_at_max": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_offered_amounts_flexible_none_denominations_matches_empty_list": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_offered_amounts_fixed_does_not_add_exact_balance": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_offered_amounts_fixed_balance_exactly_min_only_if_min_is_a_denomination": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_offered_amounts_fixed_balance_above_max_is_capped_at_max": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_offered_amounts_fixed_is_sorted_and_deduplicated": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_offered_amounts_fixed_filters_denominations_outside_min_max": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_flexible_amounts_are_the_ladder_plus_exact_balance_inside_bounds": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_fixed_amounts_stay_within_bounds_sorted_unique": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_offered_amounts_negative_balance_is_empty": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_apply_order_none_means_404_and_fails_the_card": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_apply_order_hubble_failed_fails_the_card": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_apply_order_hubble_cancelled_fails_the_card": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_apply_order_hubble_reversed_fails_the_card": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_apply_order_success_attaches_voucher_fields": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_apply_order_processing_stays_pending": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_apply_order_unknown_status_stays_pending": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_settle_404_fails_a_pending_card": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_settle_terminal_failed_statuses_fail_the_pending_card": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_settle_success_with_voucher_succeeds": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_settle_processing_and_unknown_leave_pending_and_do_not_call_fail": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_settle_already_succeeded_is_passed_through_without_hubble": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_settle_already_failed_is_passed_through_without_hubble": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_settled_gift_cards_lists_this_user_and_settles_each_pending": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_redeem_places_order_for_the_product_reference_and_amount": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_redeem_unoffered_amount_raises_and_does_not_place_an_order": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_redeem_settles_this_users_cards_before_the_balance_check": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_gifting.py::test_redeem_404_on_an_existing_pending_card_restores_credit": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_campaign_for_start_ms_is_inclusive": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_campaign_for_end_ms_is_inclusive": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_campaign_for_one_ms_before_start_is_none": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_campaign_for_one_ms_after_end_is_none": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_campaign_for_gap_between_two_campaigns_is_none": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_campaign_for_empty_campaign_list_is_none": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_campaign_window_contains_exactly_its_closed_interval": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_campaign_spend_zero_onboards_is_the_base_fee": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_campaign_spend_partial_block_earns_nothing_beyond_base": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_campaign_spend_exactly_one_block": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_campaign_spend_incentive_is_capped": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_campaign_spend_block_size_of_one": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_campaign_spend_block_size_one_still_respects_the_cap": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_campaign_spend_negative_onboards_does_not_pay_below_base": {
+        "result": "failed",
+        "message": "assert 950 == 1000  +  where 950 = _campaign_spend(Payout(baseInr=1000, perBlockInr=50, blockSize=5, incentiveCapInr=200), -1)  +    where Payout(baseInr=1000, perBlockInr=50, blockSize=5, incentiveCapInr=200) = _terms(base=1000, per_block=50, block_size=5, cap=200)"
+      },
+      "tests/unit/user_service/test_influencers.py::test_spend_never_below_base_and_never_above_base_plus_cap": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_clicks_with_no_matching_campaign_land_in_miscellaneous": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_referred_user_in_no_window_counts_as_started_and_onboarded_in_misc": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_referred_user_inside_a_window_buckets_there_not_misc": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_pending_start_in_a_gap_increments_misc_started_only": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_empty_campaigns_put_every_click_and_referral_in_misc": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_per_campaign_clicks_plus_misc_clicks_equal_total_clicks": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_retained_requires_last_message_at_least_seven_days_after_join": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_two_pending_starts_inside_one_window_both_count": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_two_onboards_inside_one_window_both_count": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_two_retained_users_inside_one_window_both_count": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_pending_start_inside_a_window_increments_that_campaign_not_misc": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_referral_inside_a_window_is_tagged_with_that_campaign_id": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_referral_in_a_gap_has_no_campaign_id": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_derive_influencer_report_fetches_clicks_and_windows_for_this_handle": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_influencers.py::test_derive_influencer_report_unknown_handle_has_zero_clicks_and_no_windows": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_user_id.py::test_same_phone_yields_the_same_user_id_across_calls": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_user_id.py::test_plus_91_is_the_same_identity_as_digits": {
+        "result": "failed",
+        "message": "AssertionError: assert 'c82b144f6b3c...78f4a05a3e20a' == 'f81d06712d04...274a54fa7f4fd'      - f81d06712d04dc6d5d2274a54fa7f4fd   + c82b144f6b3c0bd18d378f4a05a3e20a"
+      },
+      "tests/unit/user_service/test_user_id.py::test_spaces_in_the_phone_are_the_same_identity": {
+        "result": "failed",
+        "message": "AssertionError: assert '92de31ab17ac...0a26b9078ca7d' == 'f81d06712d04...274a54fa7f4fd'      - f81d06712d04dc6d5d2274a54fa7f4fd   + 92de31ab17accc2a4270a26b9078ca7d"
+      },
+      "tests/unit/user_service/test_user_id.py::test_leading_zero_is_the_same_identity": {
+        "result": "failed",
+        "message": "AssertionError: assert '0559c2c54dfc...17a36470ca247' == 'f81d06712d04...274a54fa7f4fd'      - f81d06712d04dc6d5d2274a54fa7f4fd   + 0559c2c54dfcb979c6717a36470ca247"
+      },
+      "tests/unit/user_service/test_user_id.py::test_two_different_phones_never_share_an_id": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_user_id.py::test_different_hmac_secrets_do_not_alias_the_same_phone": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_user_id.py::test_derivation_is_deterministic_for_any_indian_mobile": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/unit/user_service/test_user_id.py::test_distinct_canonical_phones_do_not_collide": {
+        "result": "passed",
+        "message": ""
+      }
+    },
+    "api": {
+      "tests/api/document_worker/test_health_version.py::test_health_ok": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/document_worker/test_health_version.py::test_version_shape": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/document_worker/test_render_auth.py::test_render_without_authorization_header_is_401": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/document_worker/test_render_auth.py::test_render_with_wrong_bearer_token_is_401": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/document_worker/test_render_auth.py::test_render_with_malformed_authorization_header_is_401": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/document_worker/test_render_failure.py::test_render_storage_upload_failure_does_not_return_success": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/document_worker/test_render_failure.py::test_render_nonsensical_but_schema_valid_format_still_reaches_storage_prefix": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/document_worker/test_render_success.py::test_render_docx_success_shape": {
+        "result": "skipped",
+        "message": "Environment gap, not a spec-vs-code mismatch: no `soffice` (LibreOffice) binary on PATH in this sandbox, so infra/documents/previews.py fails for every real render regardless of markdown/format validity -- see tests/outcomes/UNCERTAINTY.md document_worker 'Environment limitation' and tests/outcomes/FINDINGS.md document_worker."
+      },
+      "tests/api/document_worker/test_render_success.py::test_render_pptx_success_shape": {
+        "result": "skipped",
+        "message": "Environment gap, not a spec-vs-code mismatch: no `soffice` (LibreOffice) binary on PATH in this sandbox, so infra/documents/previews.py fails for every real render regardless of markdown/format validity -- see tests/outcomes/UNCERTAINTY.md document_worker 'Environment limitation' and tests/outcomes/FINDINGS.md document_worker."
+      },
+      "tests/api/document_worker/test_render_validation.py::test_render_missing_markdown_is_422": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/document_worker/test_render_validation.py::test_render_missing_document_is_422": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/document_worker/test_render_validation.py::test_render_format_outside_documented_enum_is_422": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/document_worker/test_render_validation.py::test_render_missing_scope_is_422": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/document_worker/test_render_validation.py::test_render_missing_scope_user_id_is_422": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/document_worker/test_render_validation.py::test_render_missing_title_is_422": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/document_worker/test_render_validation.py::test_render_missing_filename_is_422": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/document_worker/test_render_validation.py::test_render_filename_not_matching_slug_pattern_is_422": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/redirect_service/test_click_best_effort.py::test_click_logging_failure_does_not_break_redirect": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/redirect_service/test_click_best_effort.py::test_click_logging_failure_302_already_sent_at_asgi_level": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/redirect_service/test_click_best_effort.py::test_click_logging_success_records_exactly_one_call": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/redirect_service/test_health_version.py::test_health_returns_exact_documented_shape": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/redirect_service/test_health_version.py::test_version_returns_exact_documented_shape": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/redirect_service/test_health_version.py::test_version_fields_are_null_when_env_unset": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/redirect_service/test_redirect.py::test_go_redirects_302_to_exact_whatsapp_location": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/redirect_service/test_redirect.py::test_go_unregistered_handle_still_redirects": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/redirect_service/test_redirect.py::test_go_handle_with_space_is_passed_through_raw": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/redirect_service/test_redirect.py::test_go_handle_with_at_sign_is_passed_through_raw": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/redirect_service/test_redirect.py::test_go_empty_handle_segment_is_404_via_routing_not_handler": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/text_agent/test_ops_routes.py::test_health_is_public_and_returns_documented_shape": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/text_agent/test_ops_routes.py::test_version_is_public_and_returns_documented_shape": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/text_agent/test_respond_auth.py::test_respond_without_authorization_header_is_401": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/text_agent/test_respond_auth.py::test_respond_with_wrong_bearer_token_is_401": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/text_agent/test_respond_failure.py::test_llm_failure_does_not_return_success": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/text_agent/test_respond_failure.py::test_audio_message_part_is_transcribed_before_the_model_call": {
+        "result": "failed",
+        "message": "AssertionError: README promises audio parts are transcribed to text before the model call, not rejected -- a 422 here means the request never reached transcription or the model at all assert 422 == 200  +  where 422 = <Response [422 Unprocessable Entity]>.status_code"
+      },
+      "tests/api/text_agent/test_respond_failure.py::test_video_message_part_is_accepted": {
+        "result": "failed",
+        "message": "AssertionError: README lists video as an accepted UriMediaContent type -- a 422 here means the wire schema still excludes it assert 422 == 200  +  where 422 = <Response [422 Unprocessable Entity]>.status_code"
+      },
+      "tests/api/text_agent/test_respond_success.py::test_plain_text_reply_returns_documented_shape": {
+        "result": "failed",
+        "message": "AssertionError: assert {'reaction': ...ace': [], ...} == {'reaction': ...esp_fake_001'}      Omitting 4 identical items, use -vv to show   Left contains 1 more item:   {'trace': []}   Use -v to get more diff"
+      },
+      "tests/api/text_agent/test_respond_validation.py::test_missing_user_field_is_422": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/text_agent/test_respond_validation.py::test_persona_outside_discriminator_is_422": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/text_agent/test_respond_validation.py::test_student_missing_scope_grade_is_422": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/text_agent/test_respond_validation.py::test_teacher_missing_scope_grades_is_422": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/text_agent/test_respond_validation.py::test_missing_previous_response_id_is_accepted": {
+        "result": "failed",
+        "message": "AssertionError: README's own request example omits previousResponseId and presents it as valid -- a 422 here means the field is undocumentedly required assert 422 == 200  +  where 422 = <Response [422 Unprocessable Entity]>.status_code"
+      },
+      "tests/api/user_service/test_access.py::test_public_access_phone_needs_onboarding_for_unknown_phone": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_access.py::test_public_access_phone_allowed_for_onboarded_phone": {
+        "result": "failed",
+        "message": "AssertionError: expected body['user'] populated for an allowed phone, got None assert None is not None"
+      },
+      "tests/api/user_service/test_access.py::test_public_access_phone_blocked_takes_precedence": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_access.py::test_public_access_phone_422_on_missing_field": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_access.py::test_internal_access_phone_matches_public_result": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_access.py::test_internal_access_phone_422_on_wrong_type": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_ambassadors.py::test_enroll_ambassador_first_call_mints_handle_and_returns_status": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_ambassadors.py::test_enroll_ambassador_is_idempotent_same_handle_on_second_call": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_ambassadors.py::test_enroll_ambassador_refuses_when_institution_id_is_null": {
+        "result": "failed",
+        "message": "AssertionError: expected 422 for a refused enroll (null institution.id); got 200: {\"result\":\"school_not_recognised\"} assert 200 == 422  +  where 200 = <Response [200 OK]>.status_code"
+      },
+      "tests/api/user_service/test_ambassadors.py::test_enroll_ambassador_refusal_does_not_create_a_registry_row": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_ambassadors.py::test_enroll_ambassador_404_for_unknown_user": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_ambassadors.py::test_get_ambassador_status_null_when_not_enrolled": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_ambassadors.py::test_get_ambassador_status_after_enroll": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_ambassadors.py::test_list_ambassadors_row_shape": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_ambassadors.py::test_ambassador_detail_404_for_unenrolled_user": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_ambassadors.py::test_ambassador_detail_shape": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_route_enumeration_is_nonempty": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[GET /health]": {
+        "result": "failed",
+        "message": "AssertionError: GET /health returned 200 with no Authorization header; expected 401 (require_internal_secret must short-circuit before validation/lookup) assert 200 == 401  +  where 200 = <Response [200 OK]>.status_code"
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[GET /version]": {
+        "result": "failed",
+        "message": "AssertionError: GET /version returned 200 with no Authorization header; expected 401 (require_internal_secret must short-circuit before validation/lookup) assert 200 == 401  +  where 200 = <Response [200 OK]>.status_code"
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[POST /internal/access/phone]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[POST /internal/users]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[GET /internal/users]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[GET /internal/profiles]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[POST /internal/users:batchGet]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[GET /internal/users/x]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[DELETE /internal/users/x]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[GET /internal/directory/x]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[POST /internal/users/x/profile]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[POST /internal/users/x/location]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[GET /internal/users/x/enrollments]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[POST /internal/enrollments]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[DELETE /internal/enrollments]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[GET /internal/threads/x/sessions/corpus]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[GET /internal/users/x/threads/x/sessions]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[GET /internal/users/x/threads/x/sessions/x]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[PUT /internal/users/x/threads/x/sessions/x/extraction]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[POST /internal/users/x/threads/x/transcript]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[POST /internal/blocklist]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[DELETE /internal/blocklist]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[GET /internal/influencers]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[POST /internal/influencers]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[GET /internal/influencers/x]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[DELETE /internal/influencers/x]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[POST /internal/influencers/x/campaigns]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[DELETE /internal/influencers/x/campaigns/x]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[POST /internal/users/x/ambassador]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[GET /internal/users/x/ambassador]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[GET /internal/ambassadors]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[GET /internal/ambassadors/x]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[GET /internal/users/x/rewards]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[POST /internal/users/x/gift-cards]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[GET /internal/users/x/gift-cards/x]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[POST /internal/referrers/x/click]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_no_auth_header[GET /internal/institutions/x]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[GET /health]": {
+        "result": "failed",
+        "message": "AssertionError: GET /health returned 200 with a wrong bearer token; expected 401 assert 200 == 401  +  where 200 = <Response [200 OK]>.status_code"
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[GET /version]": {
+        "result": "failed",
+        "message": "AssertionError: GET /version returned 200 with a wrong bearer token; expected 401 assert 200 == 401  +  where 200 = <Response [200 OK]>.status_code"
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[POST /internal/access/phone]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[POST /internal/users]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[GET /internal/users]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[GET /internal/profiles]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[POST /internal/users:batchGet]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[GET /internal/users/x]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[DELETE /internal/users/x]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[GET /internal/directory/x]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[POST /internal/users/x/profile]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[POST /internal/users/x/location]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[GET /internal/users/x/enrollments]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[POST /internal/enrollments]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[DELETE /internal/enrollments]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[GET /internal/threads/x/sessions/corpus]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[GET /internal/users/x/threads/x/sessions]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[GET /internal/users/x/threads/x/sessions/x]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[PUT /internal/users/x/threads/x/sessions/x/extraction]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[POST /internal/users/x/threads/x/transcript]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[POST /internal/blocklist]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[DELETE /internal/blocklist]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[GET /internal/influencers]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[POST /internal/influencers]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[GET /internal/influencers/x]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[DELETE /internal/influencers/x]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[POST /internal/influencers/x/campaigns]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[DELETE /internal/influencers/x/campaigns/x]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[POST /internal/users/x/ambassador]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[GET /internal/users/x/ambassador]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[GET /internal/ambassadors]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[GET /internal/ambassadors/x]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[GET /internal/users/x/rewards]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[POST /internal/users/x/gift-cards]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[GET /internal/users/x/gift-cards/x]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[POST /internal/referrers/x/click]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_every_guarded_route_401s_with_wrong_bearer_token[GET /internal/institutions/x]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_auth_boundary.py::test_public_route_exemption_set_matches_readme": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_blocklist.py::test_block_phone_then_access_reports_blocked": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_blocklist.py::test_unblock_phone_removes_block": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_blocklist.py::test_block_phone_422_missing_field": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_blocklist.py::test_unblock_unknown_phone_does_not_crash": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_directory.py::test_list_users_offset_beyond_total_returns_empty_but_true_total": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_directory.py::test_list_users_limit_zero_returns_zero_items": {
+        "result": "failed",
+        "message": "AssertionError: expected 200 with an empty page for limit=0, got 422: {\"detail\":[{\"type\":\"greater_than_equal\",\"loc\":[\"query\",\"limit\"],\"msg\":\"Input should be greater than or equal to 1\",\"input\":\"0\",\"ctx\":{\"ge\":1}}]} assert 422 == 200  +  where 422 = <Response [422 Unprocessable Entity]>.status_code"
+      },
+      "tests/api/user_service/test_directory.py::test_list_users_sort_by_name_is_case_insensitive_alphabetical": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_directory.py::test_list_users_search_matching_nothing_returns_empty": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_directory.py::test_list_users_search_multi_token_requires_all_tokens_to_match": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_directory.py::test_list_users_combined_grade_and_subject_filters": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_directory.py::test_list_users_401_and_shape_smoke": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_directory.py::test_list_users_422_missing_required_persona": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_directory.py::test_list_profiles_returns_every_stored_profile_of_one_persona": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_directory.py::test_list_profiles_422_missing_required_persona": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_enrollments.py::test_get_enrollments_empty_for_unrelated_user": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_enrollments.py::test_create_enrollment_then_visible_from_both_sides": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_enrollments.py::test_create_enrollment_422_missing_field": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_enrollments.py::test_delete_enrollment_removes_it": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_enrollments.py::test_delete_enrollment_422_missing_field": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_gifting.py::test_rewards_balance_and_options_for_ambassador_at_tier_one": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_gifting.py::test_rewards_404_for_non_ambassador_user": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_gifting.py::test_redeem_gift_card_success_shape": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_gifting.py::test_redeem_gift_card_amount_not_in_live_storefront_is_rejected": {
+        "result": "failed",
+        "message": "AssertionError: expected 422 for an unredeemable amount; got 400: {\"detail\":\"\u20b92101 is not redeemable on Amazon right now\"} assert 400 == 422  +  where 400 = <Response [400 Bad Request]>.status_code"
+      },
+      "tests/api/user_service/test_gifting.py::test_redeem_gift_card_404_for_non_ambassador_user": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_gifting.py::test_redeem_gift_card_422_missing_field": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_gifting.py::test_get_gift_card_404_for_unknown_gift_card_id": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_health_version.py::test_health_returns_200": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_health_version.py::test_version_returns_200": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_influencers.py::test_create_influencer_shape": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_influencers.py::test_create_influencer_422_missing_field": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_influencers.py::test_create_influencer_422_empty_handle": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_influencers.py::test_create_influencer_409_on_collision_with_existing_influencer_handle": {
+        "result": "failed",
+        "message": "AssertionError: README documents 409 on handle collision; got 200: {\"kind\":\"influencer\",\"handle\":\"dupe\",\"platform\":\"instagram\",\"createdAtMs\":1788767614855} assert 200 == 409  +  where 200 = <Response [200 OK]>.status_code"
+      },
+      "tests/api/user_service/test_influencers.py::test_create_influencer_409_on_collision_with_existing_ambassador_handle": {
+        "result": "failed",
+        "message": "AssertionError: README documents the @-mention namespace as shared across kinds; got 500: Internal Server Error assert 500 == 409  +  where 500 = <Response [500 Internal Server Error]>.status_code"
+      },
+      "tests/api/user_service/test_influencers.py::test_get_influencer_report_404_for_unknown_handle": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_influencers.py::test_get_influencer_report_shape_empty": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_influencers.py::test_list_influencers_includes_every_registered_handle": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_influencers.py::test_create_campaign_shape": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_influencers.py::test_create_campaign_404_for_unknown_handle": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_influencers.py::test_create_campaign_422_start_not_before_end": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_influencers.py::test_campaign_overlap_identical_window_is_409": {
+        "result": "failed",
+        "message": "AssertionError: identical window must be rejected as an overlap; got 200: {\"id\":\"10000_20000\",\"startMs\":10000,\"endMs\":20000,\"payout\":{\"baseInr\":100,\"perBlockInr\":10,\"blockSize\":5,\"incentiveCapInr\":200}} assert 200 == 409  +  where 200 = <Response [200 OK]>.status_code"
+      },
+      "tests/api/user_service/test_influencers.py::test_campaign_overlap_partial_at_start_is_409": {
+        "result": "failed",
+        "message": "AssertionError: window overlapping the start must be rejected; got 200: {\"id\":\"5000_15000\",\"startMs\":5000,\"endMs\":15000,\"payout\":{\"baseInr\":100,\"perBlockInr\":10,\"blockSize\":5,\"incentiveCapInr\":200}} assert 200 == 409  +  where 200 = <Response [200 OK]>.status_code"
+      },
+      "tests/api/user_service/test_influencers.py::test_campaign_overlap_partial_at_end_is_409": {
+        "result": "failed",
+        "message": "AssertionError: window overlapping the end must be rejected; got 200: {\"id\":\"15000_25000\",\"startMs\":15000,\"endMs\":25000,\"payout\":{\"baseInr\":100,\"perBlockInr\":10,\"blockSize\":5,\"incentiveCapInr\":200}} assert 200 == 409  +  where 200 = <Response [200 OK]>.status_code"
+      },
+      "tests/api/user_service/test_influencers.py::test_campaign_overlap_fully_containing_is_409": {
+        "result": "failed",
+        "message": "AssertionError: a window fully containing the existing one must be rejected; got 200: {\"id\":\"5000_25000\",\"startMs\":5000,\"endMs\":25000,\"payout\":{\"baseInr\":100,\"perBlockInr\":10,\"blockSize\":5,\"incentiveCapInr\":200}} assert 200 == 409  +  where 200 = <Response [200 OK]>.status_code"
+      },
+      "tests/api/user_service/test_influencers.py::test_campaign_adjacent_non_overlapping_window_succeeds": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_influencers.py::test_delete_campaign_204": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_influencers.py::test_delete_influencer_204_and_report_then_404s": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_referrers.py::test_click_on_registered_influencer_handle_records_one_row": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_referrers.py::test_click_on_registered_ambassador_handle_records_one_row": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_referrers.py::test_click_on_unknown_handle_is_a_no_op_but_still_succeeds": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_referrers.py::test_click_normalizes_handle_case_and_at_sign": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_threads.py::test_append_transcript_returns_tip_and_started_at_ms": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_threads.py::test_append_transcript_404_for_unknown_user": {
+        "result": "failed",
+        "message": "assert 200 == 404  +  where 200 = <Response [200 OK]>.status_code"
+      },
+      "tests/api/user_service/test_threads.py::test_append_transcript_422_empty_messages": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_threads.py::test_append_transcript_422_missing_read_ids": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_threads.py::test_get_session_transcripts_returns_appended_session": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_threads.py::test_get_session_transcripts_404_for_unknown_user": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_threads.py::test_get_session_transcripts_empty_for_thread_never_used": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_threads.py::test_set_session_extraction_404_for_unknown_session": {
+        "result": "failed",
+        "message": "AssertionError: expected 404 for grading a nonexistent session; got 500: Internal Server Error assert 500 == 404  +  where 500 = <Response [500 Internal Server Error]>.status_code"
+      },
+      "tests/api/user_service/test_threads.py::test_set_session_extraction_then_visible_on_read": {
+        "result": "failed",
+        "message": "AssertionError: README's Firestore layout documents `gradedWith` as a stored session field; it is absent from the session-read response body, keys=['extraction', 'lastMessageAtMs', 'messages', 'readNodeIds', 'startedAtMs'] assert 'gradedWith' in {'startedAtMs': 1700000000000, 'lastMessageAtMs': 1700000000000, 'readNodeIds': [], 'extraction': {'intent': 'wanted help with algebra', 'grounding': 3, 'boundaries': 3, 'craft': 2, ...}, ...}"
+      },
+      "tests/api/user_service/test_threads.py::test_set_session_extraction_422_missing_field": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_users.py::test_create_user_returns_201_or_200_with_profile_shape": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_users.py::test_create_user_is_create_only_original_profile_survives_second_create": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_users.py::test_create_user_422_missing_required_field": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_users.py::test_get_user_404_for_unknown_user_id": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_users.py::test_get_user_200_returns_created_profile": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_users.py::test_batch_get_users_returns_only_existing_ids_in_request_order": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_users.py::test_batch_get_users_422_wrong_type": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_users.py::test_get_directory_entry_404_for_unknown_user": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_users.py::test_get_directory_entry_shape": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_users.py::test_delete_user_returns_204_and_user_then_404s": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_users.py::test_delete_unknown_user_does_not_crash": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_users.py::test_update_profile_overlays_only_provided_fields": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_users.py::test_update_profile_404_for_unknown_user": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_users.py::test_update_profile_422_wrong_type": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_users.py::test_set_location_200_returns_profile_with_location": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_users.py::test_set_location_404_for_unknown_user": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/user_service/test_users.py::test_set_location_422_missing_required_field": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/whatsapp_adapter/test_flows.py::test_missing_encrypted_aes_key_returns_422[/flows/onboarding]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/whatsapp_adapter/test_flows.py::test_missing_encrypted_aes_key_returns_422[/flows/grade]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/whatsapp_adapter/test_flows.py::test_missing_encrypted_flow_data_returns_422[/flows/onboarding]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/whatsapp_adapter/test_flows.py::test_missing_encrypted_flow_data_returns_422[/flows/grade]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/whatsapp_adapter/test_flows.py::test_missing_initial_vector_returns_422[/flows/onboarding]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/whatsapp_adapter/test_flows.py::test_missing_initial_vector_returns_422[/flows/grade]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/whatsapp_adapter/test_flows.py::test_empty_body_returns_422[/flows/onboarding]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/whatsapp_adapter/test_flows.py::test_empty_body_returns_422[/flows/grade]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/whatsapp_adapter/test_flows.py::test_plausible_shaped_garbage_ciphertext_fails_with_421[/flows/onboarding]": {
+        "result": "failed",
+        "message": "assert 500 == 421  +  where 500 = <Response [500 Internal Server Error]>.status_code"
+      },
+      "tests/api/whatsapp_adapter/test_flows.py::test_plausible_shaped_garbage_ciphertext_fails_with_421[/flows/grade]": {
+        "result": "failed",
+        "message": "assert 500 == 421  +  where 500 = <Response [500 Internal Server Error]>.status_code"
+      },
+      "tests/api/whatsapp_adapter/test_flows.py::test_non_base64_ciphertext_fails_with_421[/flows/onboarding]": {
+        "result": "failed",
+        "message": "assert 500 == 421  +  where 500 = <Response [500 Internal Server Error]>.status_code"
+      },
+      "tests/api/whatsapp_adapter/test_flows.py::test_non_base64_ciphertext_fails_with_421[/flows/grade]": {
+        "result": "failed",
+        "message": "assert 500 == 421  +  where 500 = <Response [500 Internal Server Error]>.status_code"
+      },
+      "tests/api/whatsapp_adapter/test_flows.py::test_empty_string_fields_fail_with_421[/flows/onboarding]": {
+        "result": "failed",
+        "message": "assert 500 == 421  +  where 500 = <Response [500 Internal Server Error]>.status_code"
+      },
+      "tests/api/whatsapp_adapter/test_flows.py::test_empty_string_fields_fail_with_421[/flows/grade]": {
+        "result": "failed",
+        "message": "assert 500 == 421  +  where 500 = <Response [500 Internal Server Error]>.status_code"
+      },
+      "tests/api/whatsapp_adapter/test_ops_endpoints.py::test_health_returns_ok_status_and_started_at": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/whatsapp_adapter/test_ops_endpoints.py::test_version_returns_release_metadata_shape": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/whatsapp_adapter/test_webhook_signature.py::test_missing_signature_header_is_rejected_with_403": {
+        "result": "failed",
+        "message": "assert 500 == 403  +  where 500 = <Response [500 Internal Server Error]>.status_code"
+      },
+      "tests/api/whatsapp_adapter/test_webhook_signature.py::test_wrong_secret_signature_is_rejected_with_403": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/whatsapp_adapter/test_webhook_signature.py::test_syntactically_present_but_invalid_signature_is_rejected_with_403": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/whatsapp_adapter/test_webhook_signature.py::test_correct_signature_is_accepted": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/whatsapp_adapter/test_webhook_success.py::test_well_formed_inbound_message_is_claimed_then_enqueued_then_200": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/whatsapp_adapter/test_webhook_success.py::test_duplicate_delivery_is_claimed_and_processed_only_once": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/whatsapp_adapter/test_webhook_success.py::test_sent_status_confirms_delivery": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/whatsapp_adapter/test_webhook_validation.py::test_malformed_supported_payload_fails_loudly": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/whatsapp_adapter/test_webhook_validation.py::test_reaction_message_is_dropped_and_returns_200": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/whatsapp_adapter/test_webhook_validation.py::test_unrecognized_message_type_is_ignored_and_returns_200": {
+        "result": "failed",
+        "message": "AssertionError: an ignored message must not be claimed assert ['wamid.UNRECOGNIZED1'] == []      Left contains one more item: 'wamid.UNRECOGNIZED1'   Use -v to get more diff"
+      },
+      "tests/api/whatsapp_adapter/test_webhook_verification.py::test_matching_token_echoes_challenge": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/whatsapp_adapter/test_webhook_verification.py::test_wrong_verify_token_is_rejected": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/whatsapp_adapter/test_webhook_verification.py::test_wrong_hub_mode_is_rejected": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/api/whatsapp_adapter/test_webhook_verification.py::test_missing_query_params_is_rejected_with_403": {
+        "result": "failed",
+        "message": "assert 500 == 403  +  where 500 = <Response [500 Internal Server Error]>.status_code"
+      }
+    },
+    "integration": {
+      "tests/integration/test_cascade.py::test_delete_user_removes_owned_data_and_cascades_referrer_registry": {
+        "result": "failed",
+        "message": "assert True is False"
+      },
+      "tests/integration/test_cascade.py::test_delete_cascade_would_catch_a_dangling_ambassador_registry_entry": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_cascade.py::test_delete_does_not_remove_adapter_owned_onboarding": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_cascade.py::test_delete_unknown_user_does_not_crash": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_cross_service_contract.py::test_adapter_create_user_payload_validates_and_round_trips": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_cross_service_contract.py::test_adapter_append_transcript_payload_validates_and_round_trips": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_cross_service_contract.py::test_adapter_append_result_is_a_valid_text_agent_previous_response_id": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_cross_service_contract.py::test_text_agent_profile_update_payload_validates_and_round_trips": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_cross_service_contract.py::test_text_agent_ambassador_and_rewards_responses_validate": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_cross_service_contract.py::test_malformed_create_user_payload_is_422": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_cross_service_contract.py::test_malformed_append_payload_is_422": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_cross_service_contract.py::test_users_client_parses_live_responses": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_derive_on_read.py::test_directory_activity_moves_with_session_and_transcript_rows": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_derive_on_read.py::test_directory_unknown_user_is_404": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_derive_on_read.py::test_ambassador_points_move_with_attributed_user_rows": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_derive_on_read.py::test_ambassador_status_null_when_not_enrolled": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_derive_on_read.py::test_influencer_funnel_moves_with_clicks_and_onboards": {
+        "result": "failed",
+        "message": "assert 500 == 200  +  where 500 = <Response [500 Internal Server Error]>.status_code"
+      },
+      "tests/integration/test_derive_on_read.py::test_influencer_started_moves_with_buffered_onboarding_rows": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_derive_on_read.py::test_influencer_unknown_handle_is_404": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_derive_on_read.py::test_nothing_writes_stored_counters_for_points_or_balances": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_hubble_settlement.py::test_settlement_404_fails_the_card_and_restores_balance": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_hubble_settlement.py::test_settlement_terminal_failure_fails_the_card_and_restores_balance[FAILED-910000060111]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_hubble_settlement.py::test_settlement_terminal_failure_fails_the_card_and_restores_balance[CANCELLED-910000060112]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_hubble_settlement.py::test_settlement_terminal_failure_fails_the_card_and_restores_balance[REVERSED-910000060113]": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_hubble_settlement.py::test_settlement_processing_stays_pending_and_keeps_balance_debited": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_hubble_settlement.py::test_settlement_success_with_voucher_stores_voucher_fields": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_hubble_settlement.py::test_settlement_success_with_empty_vouchers_settles_without_voucher_fields": {
+        "result": "failed",
+        "message": "AssertionError: SUCCESS with empty vouchers must settle, not crash; got 500: Internal Server Error assert 500 == 200  +  where 500 = <Response [500 Internal Server Error]>.status_code"
+      },
+      "tests/integration/test_hubble_settlement.py::test_settlement_unknown_status_stays_pending_and_does_not_crash": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_hubble_settlement.py::test_place_order_timeout_after_upstream_success_settles_without_double_charge": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_hubble_settlement.py::test_redeem_rejected_for_non_ambassador": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_hubble_settlement.py::test_redeem_amount_not_offered_is_rejected_without_placing_an_order": {
+        "result": "failed",
+        "message": "assert 400 == 422  +  where 400 = <Response [400 Bad Request]>.status_code"
+      },
+      "tests/integration/test_idempotency.py::test_concurrent_claims_of_the_same_id_exactly_one_wins": {
+        "result": "failed",
+        "message": "google.api_core.exceptions.Aborted: 409 Transaction lock timeout."
+      },
+      "tests/integration/test_idempotency.py::test_sequential_claim_of_the_same_id_succeeds_once": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_idempotency.py::test_distinct_message_ids_each_succeed_once": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_sequences.py::test_concurrent_appends_to_one_session_assign_sequences_1_through_n": {
+        "result": "failed",
+        "message": "assert [500, 500, 50...500, 500, ...] == [200, 200, 20...200, 200, ...]      At index 0 diff: 500 != 200   Use -v to get more diff"
+      },
+      "tests/integration/test_sequences.py::test_caller_supplied_sequence_is_ignored": {
+        "result": "failed",
+        "message": "assert [0] == [1]      At index 0 diff: 0 != 1   Use -v to get more diff"
+      },
+      "tests/integration/test_sequences.py::test_append_empty_messages_is_422": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_session_boundary.py::test_gap_strictly_under_two_hours_stays_in_the_same_session": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_session_boundary.py::test_gap_strictly_over_two_hours_opens_a_new_session": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_session_boundary.py::test_gap_exactly_two_hours_opens_a_new_session": {
+        "result": "failed",
+        "message": "assert 1770000000000 == 1770007200000"
+      },
+      "tests/integration/test_session_boundary.py::test_pinned_started_at_ms_does_not_re_gap": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_session_boundary.py::test_started_at_ms_of_wrong_type_is_422": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_transactions.py::test_successful_append_moves_cursors_with_the_rows": {
+        "result": "failed",
+        "message": "assert [0, 1] == [1, 2]      At index 0 diff: 0 != 1   Use -v to get more diff"
+      },
+      "tests/integration/test_transactions.py::test_failed_append_leaves_all_cursors_and_rows_unchanged": {
+        "result": "failed",
+        "message": "assert [0] == [1]      At index 0 diff: 0 != 1   Use -v to get more diff"
+      },
+      "tests/integration/test_transactions.py::test_failure_append_does_not_advance_previous_response_id": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_transactions.py::test_read_node_ids_are_a_deduplicated_union_across_appends": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/integration/test_transactions.py::test_append_with_non_list_read_ids_is_422": {
+        "result": "passed",
+        "message": ""
+      }
+    },
+    "e2e": {
+      "tests/e2e/test_ambassador_and_gifting.py::test_ambassador_enrollment_counts_a_referred_student": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/e2e/test_ambassador_and_gifting.py::test_gift_card_redeem_settles_and_debits_balance": {
+        "result": "failed",
+        "message": "assert 404 == 200  +  where 404 = <Response [404 Not Found]>.status_code"
+      },
+      "tests/e2e/test_blocking_and_failures.py::test_blocked_phone_gets_only_the_canned_error": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/e2e/test_blocking_and_failures.py::test_reaction_message_is_dropped": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/e2e/test_blocking_and_failures.py::test_unrecognized_message_type_is_ignored": {
+        "result": "failed",
+        "message": "AssertionError: an ignored message must not produce any outbound reply assert [WhatsAppCall...wamid.out.1')] == []      Left contains one more item: WhatsAppCall(kind='text', to='919300000112', data={'body': 'Sorry, something went wrong while preparing that. Please try again in a bit.'}, wamid='wamid.out.1')   Use -v to get more diff"
+      },
+      "tests/e2e/test_blocking_and_failures.py::test_malformed_supported_payload_fails_loudly": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/e2e/test_blocking_and_failures.py::test_generation_failure_sends_canned_error_and_closes_the_turn": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/e2e/test_conversation.py::test_known_phone_generates_and_delivers_in_model_order": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/e2e/test_conversation.py::test_form_message_resolves_persona_specific_flow_id": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/e2e/test_conversation.py::test_location_share_saves_profile_and_runs_one_turn": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/e2e/test_conversation.py::test_button_tap_runs_one_stateless_turn": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/e2e/test_idempotency.py::test_duplicate_delivery_is_processed_once": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/e2e/test_onboarding.py::test_unknown_phone_sends_text_then_picks_student": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/e2e/test_onboarding.py::test_onboarding_flow_completion_attributes_first_mention": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/e2e/test_onboarding.py::test_hidden_number_requests_contact_then_resumes": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/e2e/test_onboarding.py::test_forwarded_contact_represents_phone_request": {
+        "result": "failed",
+        "message": "AssertionError: assert 'Share your n...ays with you.' == 'Hi Priya! \ud83d\udc4b ...ays with you.'      - Hi Priya! \ud83d\udc4b I'm Sujho \u2014 your AI for learning.     Share your number so everything you learn and create stays with you."
+      },
+      "tests/e2e/test_onboarding.py::test_stray_message_during_onboarding_buffers_and_represents": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/e2e/test_session_gap.py::test_session_gap_boundary": {
+        "result": "failed",
+        "message": "assert 1750000000000 == 1750014340000"
+      },
+      "tests/e2e/test_webhook_signature.py::test_valid_signature_is_accepted_and_processed": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/e2e/test_webhook_signature.py::test_wrong_secret_signature_is_rejected": {
+        "result": "passed",
+        "message": ""
+      },
+      "tests/e2e/test_webhook_signature.py::test_tampered_body_signature_is_rejected": {
+        "result": "passed",
+        "message": ""
+      }
+    }
+  }
+}

@@ -1,0 +1,119 @@
+name: Deploy Cloud Run job (Prod)
+
+# Manual only. Merge to main does not run this.
+# Opening this file IS choosing Prod. Job dropdown only (no env/mode).
+# Deploy-only: this file never builds. Same image as Pre-Prod (preprod-approved).
+
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: Cloud Run job (one job per run)
+        required: true
+        type: choice
+        default: knowledge-store-sessions
+        options:
+          - knowledge-store-sessions
+          - knowledge-store-ingest
+          - knowledge-store-remove
+          - knowledge-store-import-ncert
+          - knowledge-store-import-educart
+      commit:
+        description: Git commit to deploy (empty = this run's github.sha). Prod must be the commit tested on Pre-Prod.
+        required: false
+        type: string
+        default: ""
+      entry_id:
+        description: Required later to execute ingest/remove. Ignored for sessions.
+        required: false
+        type: string
+        default: ""
+      execute:
+        description: Run the job once after a successful deploy
+        type: boolean
+        default: false
+
+concurrency:
+  group: cloudrun-job-sujho-478914-${{ inputs.job }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    name: deploy-cloudrun-job-prod
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse unless this run is on main
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "Refuse: dispatch from main, not ${{ github.ref }}"
+            exit 1
+          fi
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.commit || github.sha }}
+
+      - uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_WIF_SERVICE_ACCOUNT_PROD }}
+
+      - uses: google-github-actions/setup-gcloud@6a7c903a70c8625ed6700fa299f5ddb4ca6022e9 # v2.1.5
+      - name: Start Cloud Build for this job
+        env:
+          JOB_ID: ${{ inputs.job }}
+          BUILD_PROJECT: sujho-478914
+          TARGET_PROJECT: sujho-478914
+          CONFIG: ci/jobs/job-deploy-only.yaml
+          ENTRY_ID: ${{ inputs.entry_id }}
+          REGISTRY: asia-south1-docker.pkg.dev/sujho-dev/services
+          IMAGE: knowledge-store-jobs
+          PIN_DIGEST: "1"
+          SHA: ${{ inputs.commit || github.sha }}
+        run: |
+          set -euo pipefail
+          SHORT="$(printf '%s' "$SHA" | cut -c1-7)"
+          extra=""
+          if [ "$PIN_DIGEST" = "1" ]; then
+            DIGEST="$(gcloud artifacts docker images describe \
+              "$REGISTRY/$IMAGE:sha-$SHORT" --format='value(image_summary.digest)')"
+            APPROVED="$(gcloud artifacts docker images describe \
+              "$REGISTRY/$IMAGE:preprod-approved" --format='value(image_summary.digest)')"
+            if [ -z "$DIGEST" ] || [ "$DIGEST" != "$APPROVED" ]; then
+              echo "Refuse: sha-$SHORT is not preprod-approved (TOCTOU / not stamped)."
+              exit 1
+            fi
+            extra=",_IMAGE_DIGEST=$DIGEST"
+          fi
+          gcloud builds submit --no-source \
+            --project="$BUILD_PROJECT" \
+            --region=asia-south1 \
+            --config="$CONFIG" \
+            --substitutions=_JOB_ID="$JOB_ID",_TARGET_PROJECT="$TARGET_PROJECT",_ENTRY_ID="$ENTRY_ID",_COMMIT_SHA="$SHA",_SHORT_SHA="$SHORT"$extra
+
+      - name: Execute job once
+        if: ${{ inputs.execute }}
+        env:
+          JOB_ID: ${{ inputs.job }}
+          PROJECT: sujho-478914
+          ENTRY_ID: ${{ inputs.entry_id }}
+        run: |
+          set -euo pipefail
+          python3 jobs/scripts/lookup_job.py --id "$JOB_ID" > /tmp/job.env
+          # shellcheck disable=SC1091
+          source /tmp/job.env
+          if [ "$NEEDS_ENTRY_ID" = "1" ]; then
+            if [ -z "$ENTRY_ID" ]; then
+              echo "ingest/remove execute needs entry_id"
+              exit 1
+            fi
+            gcloud run jobs execute "$CLOUD_RUN_JOB" \
+              --project="$PROJECT" --region=asia-south1 \
+              --update-args="$ARGS,$ENTRY_ID" --wait
+          else
+            gcloud run jobs execute "$CLOUD_RUN_JOB" \
+              --project="$PROJECT" --region=asia-south1 --wait
+          fi

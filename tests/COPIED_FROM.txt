@@ -1,0 +1,5 @@
+Copied from Desktop/Sujho/sujho/tests (local untracked tree, not on GitHub main).
+Last source file: outcomes/FINDINGS.md 2026-09-14.
+This copy cannot run by itself. Run from Desktop/Sujho/sujho:
+  .venv/bin/python tests/ci/pipeline.py unit api
+Sujho-DevOpsCheck/sujho and origin/main do not contain this tree.

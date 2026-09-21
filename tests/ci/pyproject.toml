@@ -1,0 +1,124 @@
+# Workspace-root tool config that the test pipeline depends on.
+# mutmut, coverage, ruff, and mypy read this from the Sujho umbrella cwd
+# (not from this folder). Keep in sync with the umbrella pyproject.toml.
+# Copy to the workspace root as pyproject.toml when this tree is used as
+# the tests/ checkout of github.com/Sujho/sujho.
+
+[tool.mypy]
+strict = true
+python_version = "3.13"
+exclude = '''(?x)(
+    ^\.venv/
+    | ^Data/
+    | ^evals/
+    | /__pycache__/
+)'''
+# Submodules are not installed as packages and cross-import via sys.path
+# tricks (see tests/outcomes/UNCERTAINTY.md (Static analysis section)). namespace_packages + explicit_package_bases
+# let mypy resolve `infra.*` etc. without a real install step.
+namespace_packages = true
+explicit_package_bases = true
+mypy_path = "."
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = [
+    ".venv",
+    "Data",
+    "evals/reports",
+    "__pycache__",
+    ".git",
+]
+
+[tool.ruff.lint]
+# RUF029 (unused-async) is still a preview-only rule in ruff 0.16.x; preview
+# is enabled here solely so that rule activates. See tests/outcomes/UNCERTAINTY.md (Static analysis section).
+preview = true
+select = [
+    "F",
+    "E",
+    "W",
+    "B",
+    "C4",
+    "SIM",
+    "UP",
+    "ASYNC",
+    "RUF006",
+    "RUF029",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Verbatim chat prompts in the eval corpus regularly exceed 100 chars.
+"evals/case_sets/*.py" = ["E501"]
+"Eval-Suite/eval_suite/cases/*.py" = ["E501"]
+
+[tool.pytest.ini_options]
+# Root-level pytest config only affects invocation from repo root; the
+# authoritative unit-suite config remains tests/unit/pytest.ini.
+
+[tool.coverage.run]
+branch = true
+source = [
+    "user_service/app/src",
+    "whatsapp_adapter/app/src",
+    "text_agent/app/src",
+    "document_worker/src",
+    "redirect_service/app/src",
+    "knowledge_store",
+    "infra",
+]
+relative_files = true
+omit = [
+    "mutants/*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+# Whole-product floor: integer percent measured by `pytest tests/unit tests/api`
+# with the source list above. Per-package floors live in
+# tests/outcomes/pytest/coverage_floors.json (enforced by check_coverage.py).
+fail_under = 55
+
+# Mutation testing (mutmut 3.x). Scope is the five derive-on-read money/attribution
+# modules where a surviving mutant is a real bug. Runner is the fast unit +
+# user_service API subset; integration/e2e are excluded (too slow per mutant).
+# Known-failing spec-mismatch tests (see tests/outcomes/FINDINGS.md) are deselected from
+# this runner only. See tests/outcomes/MUTATION_BASELINE.md.
+[tool.mutmut]
+source_paths = ["user_service/app/src"]
+only_mutate = [
+    "user_service/app/src/gifting.py",
+    "user_service/app/src/ambassadors.py",
+    "user_service/app/src/influencers.py",
+    "user_service/app/src/attribution.py",
+    "user_service/app/src/directory.py",
+]
+also_copy = [
+    "infra/",
+    "user_service/",
+    "tests/",
+]
+pytest_add_cli_args = [
+    "-o", "asyncio_mode=auto",
+    "-o", "asyncio_default_fixture_loop_scope=function",
+]
+pytest_add_cli_args_test_selection = [
+    "tests/unit",
+    "tests/api/user_service",
+    "--deselect=tests/unit/user_service/test_ambassadors.py::test_mint_handle_empty_name_raises",
+    "--deselect=tests/unit/user_service/test_influencers.py::test_campaign_spend_negative_onboards_does_not_pay_below_base",
+    "--deselect=tests/api/user_service/test_directory.py::test_list_users_limit_zero_returns_zero_items",
+    "--deselect=tests/api/user_service/test_gifting.py::test_redeem_gift_card_amount_not_in_live_storefront_is_rejected",
+    "--deselect=tests/api/user_service/test_influencers.py::test_create_influencer_409_on_collision_with_existing_influencer_handle",
+    "--deselect=tests/api/user_service/test_influencers.py::test_create_influencer_409_on_collision_with_existing_ambassador_handle",
+    "--deselect=tests/api/user_service/test_influencers.py::test_campaign_overlap_identical_window_is_409",
+    "--deselect=tests/api/user_service/test_influencers.py::test_campaign_overlap_partial_at_start_is_409",
+    "--deselect=tests/api/user_service/test_influencers.py::test_campaign_overlap_partial_at_end_is_409",
+    "--deselect=tests/api/user_service/test_influencers.py::test_campaign_overlap_fully_containing_is_409",
+    "--deselect=tests/api/user_service/test_threads.py::test_set_session_extraction_404_for_unknown_session",
+]
+use_setproctitle = false
+on_dependency_change = "rerun"

@@ -1,0 +1,178 @@
+{
+  "region": "asia-south1",
+  "registry": "asia-south1-docker.pkg.dev/sujho-dev/services",
+  "prod_project": "sujho-478914",
+  "dev_project": "sujho-dev",
+  "preprod_project": "sujho-preprod",
+  "short_sha_len": 7,
+  "dc_connection": "sujho-github-dc",
+  "dc_connection_prod": "sujho-github-dc-org",
+  "kaniko": "gcr.io/kaniko-project/executor@sha256:4e7a52dd1f14872430652bb3b027405b8dfd17c4538751c620ac005741ef9698",
+  "gcloud": "gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2",
+  "pilot": "redirect",
+  "skip_split": [
+    "firestore",
+    "knowledge-store-jobs",
+    "knowledge-store-jobs-local"
+  ],
+  "services": [
+    {
+      "id": "redirect",
+      "pilot": true,
+      "kind": "cloudrun",
+      "image": "redirect",
+      "cloud_run": "redirect",
+      "dockerfile": "redirect_service/app/Dockerfile",
+      "gitlink": "redirect_service",
+      "timeout": "15s",
+      "build_timeout": "600s",
+      "min_instances": 1,
+      "max_instances": 4,
+      "cpu": "1",
+      "memory": "256Mi",
+      "verify": "health",
+      "run_args": [
+        "--allow-unauthenticated"
+      ],
+      "included_files": [
+        "redirect_service/**",
+        "run_redirect.py",
+        "ci/redirect-build-deploy.yaml",
+        "ci/redirect-deploy-only.yaml",
+        "infra/**"
+      ]
+    },
+    {
+      "id": "text",
+      "kind": "cloudrun",
+      "image": "text",
+      "cloud_run": "text",
+      "dockerfile": "text_agent/app/Dockerfile",
+      "gitlink": "text_agent",
+      "timeout": "3600s",
+      "build_timeout": "3600s",
+      "min_instances": 1,
+      "max_instances": 10,
+      "cpu": "1",
+      "memory": "1Gi",
+      "verify": "health",
+      "run_args": [
+        "--allow-unauthenticated"
+      ],
+      "included_files": [
+        "text_agent/**",
+        "run_text_agent.py",
+        "ci/text-build-deploy.yaml",
+        "ci/text-deploy-only.yaml",
+        "infra/**"
+      ]
+    },
+    {
+      "id": "users",
+      "kind": "cloudrun",
+      "image": "users",
+      "cloud_run": "users",
+      "dockerfile": "user_service/app/Dockerfile",
+      "gitlink": "user_service",
+      "timeout": "240s",
+      "build_timeout": "1200s",
+      "min_instances": 1,
+      "max_instances": 10,
+      "cpu": "1",
+      "memory": "512Mi",
+      "verify": "health",
+      "run_args": [
+        "--allow-unauthenticated",
+        "--network=default",
+        "--subnet=default",
+        "--vpc-egress=all-traffic"
+      ],
+      "included_files": [
+        "user_service/**",
+        "run_users.py",
+        "ci/users-build-deploy.yaml",
+        "ci/users-deploy-only.yaml",
+        "infra/**"
+      ]
+    },
+    {
+      "id": "whatsapp",
+      "kind": "cloudrun",
+      "image": "whatsapp",
+      "cloud_run": "whatsapp",
+      "dockerfile": "whatsapp_adapter/app/Dockerfile",
+      "gitlink": "whatsapp_adapter",
+      "timeout": "600s",
+      "build_timeout": "1200s",
+      "min_instances": 1,
+      "max_instances": 1,
+      "cpu": "1",
+      "memory": "512Mi",
+      "verify": "health",
+      "run_args": [
+        "--allow-unauthenticated",
+        "--no-cpu-throttling"
+      ],
+      "included_files": [
+        "whatsapp_adapter/**",
+        "run_whatsapp_adapter.py",
+        "ci/whatsapp-build-deploy.yaml",
+        "ci/whatsapp-deploy-only.yaml",
+        "infra/**"
+      ]
+    },
+    {
+      "id": "document-worker",
+      "kind": "cloudrun",
+      "image": "document-worker",
+      "cloud_run": "document-worker",
+      "dockerfile": "document_worker/Dockerfile",
+      "gitlink": "document_worker",
+      "timeout": "3600s",
+      "build_timeout": "3600s",
+      "min_instances": 0,
+      "max_instances": 10,
+      "cpu": "2",
+      "memory": "4Gi",
+      "verify": "health",
+      "run_args": [
+        "--allow-unauthenticated",
+        "--concurrency=1"
+      ],
+      "included_files": [
+        "document_worker/**",
+        "run_document_worker.py",
+        "ci/document-worker-build-deploy.yaml",
+        "ci/document-worker-deploy-only.yaml",
+        "infra/**"
+      ]
+    },
+    {
+      "id": "admin",
+      "kind": "cloudrun",
+      "image": "admin",
+      "cloud_run": "admin",
+      "dockerfile": "admin/app/Dockerfile",
+      "gitlink": "admin",
+      "timeout": "240s",
+      "build_timeout": "1200s",
+      "min_instances": 1,
+      "max_instances": 2,
+      "cpu": "1",
+      "memory": "256Mi",
+      "verify": "revision",
+      "pre_kaniko": "assets",
+      "run_args": [
+        "--no-allow-unauthenticated",
+        "--ingress=internal-and-cloud-load-balancing",
+        "--clear-secrets"
+      ],
+      "included_files": [
+        "admin/**",
+        "ci/admin-build-deploy.yaml",
+        "ci/admin-deploy-only.yaml",
+        "infra/**"
+      ]
+    }
+  ]
+}
