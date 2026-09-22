@@ -14,10 +14,6 @@ HERE = Path(__file__).resolve().parent
 CATALOG = json.loads((HERE / "catalog.json").read_text())
 
 
-def load_catalog() -> dict:
-    return CATALOG
-
-
 def cloudrun_services(catalog: dict | None = None) -> list[dict]:
     catalog = catalog or CATALOG
     return [s for s in catalog["services"] if s.get("kind") == "cloudrun"]
@@ -117,12 +113,12 @@ IMAGE_REF="${{_REGISTRY}}/${{_IMAGE}}@$${{DEPLOY_DIGEST}}"
 echo "Deploying image: $$IMAGE_REF"
 echo "Release commit: $$DEPLOY_COMMIT"
 echo "Runtime SA: $$SA"
-if [ "${{_TARGET_PROJECT}}" = "sujho-preprod" ]; then
+if [ "${{_TARGET_PROJECT}}" = "sujho-preprod" ] || [ "${{_TARGET_PROJECT}}" = "sujho-dev" ]; then
   MIN_INSTANCES=0
 else
   MIN_INSTANCES={svc["min_instances"]}
 fi
-echo "min-instances=$$MIN_INSTANCES (Pre-Prod is 0)"
+echo "min-instances=$$MIN_INSTANCES (Pre-Prod and Dev are 0)"
 gcloud run deploy "${{_SERVICE_NAME}}" \\
           --project="${{_TARGET_PROJECT}}" \\
           --region="${{_REGION}}" \\

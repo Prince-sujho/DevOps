@@ -11,13 +11,15 @@
 # Pin the numeric GitHub owner id (stable). Then bind each SA to the
 # repos it is allowed to come from.
 #
-# Three deploy/review identities — not one:
+# Deploy/review identities — not one shared account:
 #   github-ai-review        — Secret Manager for the review key only
-#   github-deploy-preprod   — Cloud Build / Cloud Run in sujho-preprod only
+#   github-deploy-dev       — Cloud Build / Cloud Run in sujho-dev only
+#   github-deploy-preprod   — Cloud Build in sujho-dev, Cloud Run in sujho-preprod
 #   github-deploy-prod      — Cloud Build / Cloud Run in sujho-478914 only
 #   github-eval             — eval secrets on Sujho/sujho only
-# Pre-Prod's SA must have zero roles in Prod. Two workflow files are not a
-# permission boundary without this.
+# Dev's SA must have zero roles in Pre-Prod and Prod. Pre-Prod's SA must have
+# zero roles in Prod. Separate workflow files are not a permission boundary
+# without this.
 #
 # Does not create GitHub Environments. Does not auto-deploy.
 # Needs Owner on WIF_PROJECT for --apply. Fill GITHUB_OWNER_ID first:
@@ -133,7 +135,7 @@ run gcloud iam workload-identity-pools providers create-oidc "$PROVIDER_ID" \
   --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository,attribute.repository_owner=assertion.repository_owner,attribute.repository_owner_id=assertion.repository_owner_id,attribute.ref=assertion.ref" \
   --attribute-condition="assertion.repository_owner_id == '${GITHUB_OWNER_ID}'"
 
-for id in github-ai-review github-deploy-preprod github-deploy-prod github-eval; do
+for id in github-ai-review github-deploy-dev github-deploy-preprod github-deploy-prod github-eval; do
   run gcloud iam service-accounts create "$id" \
     --project="$WIF_PROJECT" \
     --display-name="$id"
@@ -157,6 +159,7 @@ bind_repo() {
 for repo in "${AI_REVIEW_REPOS[@]}"; do
   bind_repo github-ai-review "$repo"
 done
+bind_repo github-deploy-dev sujho
 bind_repo github-deploy-preprod sujho
 bind_repo github-deploy-prod sujho
 bind_repo github-eval sujho
@@ -167,6 +170,20 @@ run gcloud secrets add-iam-policy-binding ai-review-anthropic-key \
   --project="$WIF_PROJECT" \
   --member="serviceAccount:$(sa_email github-ai-review)" \
   --role="roles/secretmanager.secretAccessor"
+
+# Dev deploy: build and run only inside sujho-dev. Zero roles on Pre-Prod and Prod.
+# GitHub SA does not push images — Cloud Build's SA does.
+run gcloud projects add-iam-policy-binding "$DEV_PROJECT" \
+  --member="serviceAccount:$(sa_email github-deploy-dev)" \
+  --role="roles/cloudbuild.builds.editor"
+run gcloud projects add-iam-policy-binding "$DEV_PROJECT" \
+  --member="serviceAccount:$(sa_email github-deploy-dev)" \
+  --role="roles/run.developer"
+run gcloud artifacts repositories add-iam-policy-binding services \
+  --location="$REGION" \
+  --project="$DEV_PROJECT" \
+  --member="serviceAccount:$(sa_email github-deploy-dev)" \
+  --role="roles/artifactregistry.reader"
 
 # Pre-Prod deploy: submit Cloud Build in sujho-dev (Kaniko writes the
 # registry). Deploy/execute in sujho-preprod. Zero roles on Prod.
@@ -206,6 +223,11 @@ done
 # Runtime SAs the deploy identity must be allowed to act as (Cloud Run --service-account).
 # Repeat per service runtime SA. knowledge-store is the jobs example.
 run gcloud iam service-accounts add-iam-policy-binding \
+  "knowledge-store-run@${DEV_PROJECT}.iam.gserviceaccount.com" \
+  --project="$DEV_PROJECT" \
+  --member="serviceAccount:$(sa_email github-deploy-dev)" \
+  --role="roles/iam.serviceAccountUser"
+run gcloud iam service-accounts add-iam-policy-binding \
   "knowledge-store-run@${PREPROD_PROJECT}.iam.gserviceaccount.com" \
   --project="$PREPROD_PROJECT" \
   --member="serviceAccount:$(sa_email github-deploy-preprod)" \
@@ -217,6 +239,7 @@ run gcloud iam service-accounts add-iam-policy-binding \
   --role="roles/iam.serviceAccountUser"
 
 echo
+echo "Do NOT grant github-deploy-dev any role on ${PREPROD_PROJECT} or ${PROD_PROJECT}."
 echo "Do NOT grant github-deploy-preprod any role on ${PROD_PROJECT}."
 echo "Do NOT grant github-deploy-prod any role on ${PREPROD_PROJECT}."
 echo "Do NOT grant github-ai-review or github-eval Cloud Run / Cloud Build."
@@ -230,6 +253,7 @@ echo "    GCP_WIF_SERVICE_ACCOUNT_AI_REVIEW=$(sa_email github-ai-review)"
 echo
 echo "  On ${GITHUB_ORG}/sujho (deploy + eval + promotion):"
 echo "    GCP_WIF_PROVIDER=$(provider_resource "$WIF_NUMBER")"
+echo "    GCP_WIF_SERVICE_ACCOUNT_DEV=$(sa_email github-deploy-dev)"
 echo "    GCP_WIF_SERVICE_ACCOUNT_PREPROD=$(sa_email github-deploy-preprod)"
 echo "    GCP_WIF_SERVICE_ACCOUNT_PROD=$(sa_email github-deploy-prod)"
 echo "    GCP_WIF_SERVICE_ACCOUNT_EVAL=$(sa_email github-eval)"

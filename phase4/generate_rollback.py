@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Write the two Cloud Run *service* rollback GitHub forms from catalog.json.
+"""Write the Cloud Run *service* rollback GitHub forms from catalog.json.
 
-Opening the file is choosing Pre-Prod vs Prod. Job rollback is not this
+Opening the file is choosing Dev, Pre-Prod, or Prod. Job rollback is not this
 form: jobs have no HTTP traffic; redeploy a previous digest instead.
 
 The run step uses equals-form flags. rollback-cloudrun.sh must parse those.
@@ -17,6 +17,7 @@ import workflow_common as wc
 HERE = Path(__file__).resolve().parent
 CATALOG = json.loads((HERE / "catalog.json").read_text())
 PINS = json.loads((HERE.parent / "action-pins.json").read_text())["pins"]
+OUT_DEV = HERE / "workflows" / "cloud-run-dev-rollback.yaml"
 OUT_PREPROD = HERE / "workflows" / "cloud-run-preprod-rollback.yaml"
 OUT_PROD = HERE / "workflows" / "cloud-run-prod-rollback.yaml"
 
@@ -92,7 +93,14 @@ jobs:
 
 
 def main() -> None:
-    OUT_PREPROD.parent.mkdir(parents=True, exist_ok=True)
+    OUT_DEV.parent.mkdir(parents=True, exist_ok=True)
+    OUT_DEV.write_text(
+        render(
+            "Rollback Cloud Run service (Dev)",
+            "sujho-dev",
+            "GCP_WIF_SERVICE_ACCOUNT_DEV",
+        )
+    )
     OUT_PREPROD.write_text(
         render(
             "Rollback Cloud Run service (Pre-Prod)",
@@ -107,6 +115,7 @@ def main() -> None:
             "GCP_WIF_SERVICE_ACCOUNT_PROD",
         )
     )
+    print(f"wrote {OUT_DEV.relative_to(HERE)}")
     print(f"wrote {OUT_PREPROD.relative_to(HERE)}")
     print(f"wrote {OUT_PROD.relative_to(HERE)}")
 

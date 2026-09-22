@@ -104,9 +104,9 @@ class CatalogTests(unittest.TestCase):
     def test_short_sha_matches_cloud_build(self) -> None:
         self.assertEqual(CATALOG["short_sha_len"], 7)
 
-    def test_infra_on_every_cloudrun_filter(self) -> None:
+    def test_included_files_path_filters_are_gone(self) -> None:
         for svc in CATALOG["services"]:
-            self.assertIn("infra/**", svc["included_files"])
+            self.assertNotIn("included_files", svc)
 
     def test_4a_fields_are_gone(self) -> None:
         self.assertNotIn("path_filter_only", CATALOG)
@@ -334,8 +334,10 @@ class ScriptTests(unittest.TestCase):
 
     def test_wif_pins_owner_id_and_splits_identities(self) -> None:
         self.assertIn("repository_owner_id", WIF)
+        self.assertIn("github-deploy-dev", WIF)
         self.assertIn("github-deploy-preprod", WIF)
         self.assertIn("github-deploy-prod", WIF)
+        self.assertIn("Do NOT grant github-deploy-dev any role on ${PREPROD_PROJECT}", WIF)
         self.assertIn("github-ai-review", WIF)
         self.assertIn("github-eval", WIF)
         self.assertIn("Do NOT grant github-deploy-preprod any role on ${PROD_PROJECT}", WIF)
@@ -364,6 +366,7 @@ class ScriptTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("DRY-RUN", proc.stdout)
         self.assertIn("assertion.repository_owner_id == '123456789'", proc.stdout)
+        self.assertIn("GCP_WIF_SERVICE_ACCOUNT_DEV", proc.stdout)
         self.assertIn("GCP_WIF_SERVICE_ACCOUNT_PROD", proc.stdout)
         self.assertNotIn("fatal", proc.stdout.lower())
 
@@ -539,7 +542,12 @@ class ScriptTests(unittest.TestCase):
         self.assertNotIn("sujho-478914", pre)
         self.assertIn("sujho-478914", prod)
         self.assertNotIn("sujho-preprod", prod)
-        for text in (pre, prod):
+        dev = (HERE / "workflows" / "cloud-run-dev-rollback.yaml").read_text()
+        self.assertIn("PROJECT: sujho-dev", dev)
+        self.assertIn("GCP_WIF_SERVICE_ACCOUNT_DEV", dev)
+        self.assertNotIn("sujho-preprod", dev)
+        self.assertNotIn("sujho-478914", dev)
+        for text in (pre, prod, dev):
             self.assertIn("workflow_dispatch", text)
             self.assertIn("concurrency:", text)
             self.assertIn("cancel-in-progress: false", text)
@@ -601,6 +609,17 @@ class ScriptTests(unittest.TestCase):
         self.assertIn("ci/${SERVICE}-deploy-only.yaml", prod)
         self.assertIn('PIN_DIGEST: "1"', prod)
         self.assertIn('PIN_DIGEST: "0"', pre)
+        dev = (HERE / "workflows" / "cloud-run-dev-service.yaml").read_text()
+        self.assertEqual(generate_service_workflow.render_dev(), dev)
+        self.assertIn("TARGET_PROJECT: sujho-dev", dev)
+        self.assertIn("BUILD_PROJECT: sujho-dev", dev)
+        self.assertIn("GCP_WIF_SERVICE_ACCOUNT_DEV", dev)
+        self.assertIn("ci/${SERVICE}-build-deploy.yaml", dev)
+        self.assertIn('PIN_DIGEST: "0"', dev)
+        self.assertNotIn("sujho-preprod", dev)
+        self.assertNotIn("sujho-478914", dev)
+        self.assertNotIn("GCP_WIF_SERVICE_ACCOUNT_PREPROD", dev)
+        self.assertNotIn("GCP_WIF_SERVICE_ACCOUNT_PROD", dev)
         for text in (pre, prod):
             self.assertIn("inputs.commit", text)
             self.assertIn("inputs.commit || github.sha", text)

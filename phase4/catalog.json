@@ -33,13 +33,6 @@
       "verify": "health",
       "run_args": [
         "--allow-unauthenticated"
-      ],
-      "included_files": [
-        "redirect_service/**",
-        "run_redirect.py",
-        "ci/redirect-build-deploy.yaml",
-        "ci/redirect-deploy-only.yaml",
-        "infra/**"
       ]
     },
     {
@@ -58,13 +51,6 @@
       "verify": "health",
       "run_args": [
         "--allow-unauthenticated"
-      ],
-      "included_files": [
-        "text_agent/**",
-        "run_text_agent.py",
-        "ci/text-build-deploy.yaml",
-        "ci/text-deploy-only.yaml",
-        "infra/**"
       ]
     },
     {
@@ -86,13 +72,6 @@
         "--network=default",
         "--subnet=default",
         "--vpc-egress=all-traffic"
-      ],
-      "included_files": [
-        "user_service/**",
-        "run_users.py",
-        "ci/users-build-deploy.yaml",
-        "ci/users-deploy-only.yaml",
-        "infra/**"
       ]
     },
     {
@@ -112,13 +91,6 @@
       "run_args": [
         "--allow-unauthenticated",
         "--no-cpu-throttling"
-      ],
-      "included_files": [
-        "whatsapp_adapter/**",
-        "run_whatsapp_adapter.py",
-        "ci/whatsapp-build-deploy.yaml",
-        "ci/whatsapp-deploy-only.yaml",
-        "infra/**"
       ]
     },
     {
@@ -138,13 +110,6 @@
       "run_args": [
         "--allow-unauthenticated",
         "--concurrency=1"
-      ],
-      "included_files": [
-        "document_worker/**",
-        "run_document_worker.py",
-        "ci/document-worker-build-deploy.yaml",
-        "ci/document-worker-deploy-only.yaml",
-        "infra/**"
       ]
     },
     {
@@ -166,12 +131,6 @@
         "--no-allow-unauthenticated",
         "--ingress=internal-and-cloud-load-balancing",
         "--clear-secrets"
-      ],
-      "included_files": [
-        "admin/**",
-        "ci/admin-build-deploy.yaml",
-        "ci/admin-deploy-only.yaml",
-        "infra/**"
       ]
     }
   ]

@@ -11,6 +11,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 
 CATALOG = json.loads((HERE / "catalog.jobs.json").read_text())
+DEV = (HERE / "workflows" / "cloud-run-dev-deploy.yaml").read_text()
 PREPROD = (HERE / "workflows" / "cloud-run-preprod-deploy.yaml").read_text()
 PROD = (HERE / "workflows" / "cloud-run-prod-deploy.yaml").read_text()
 BUILD = (HERE / "templates" / "job-build-deploy.yaml").read_text()
@@ -84,6 +85,15 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("GCP_WIF_SERVICE_ACCOUNT_PROD", PREPROD)
         self.assertIn("GCP_WIF_SERVICE_ACCOUNT_PROD", PROD)
         self.assertNotIn("GCP_WIF_SERVICE_ACCOUNT_PREPROD", PROD)
+        self.assertIn("TARGET_PROJECT: sujho-dev", DEV)
+        self.assertIn("BUILD_PROJECT: sujho-dev", DEV)
+        self.assertIn("GCP_WIF_SERVICE_ACCOUNT_DEV", DEV)
+        self.assertIn("ci/jobs/job-build-deploy.yaml", DEV)
+        self.assertIn('PIN_DIGEST: "0"', DEV)
+        self.assertNotIn("sujho-preprod", DEV)
+        self.assertNotIn("sujho-478914", DEV)
+        self.assertNotIn("GCP_WIF_SERVICE_ACCOUNT_PREPROD", DEV)
+        self.assertNotIn("GCP_WIF_SERVICE_ACCOUNT_PROD", DEV)
 
     def test_preprod_submits_cloud_build_in_sujho_dev(self) -> None:
         submit = PREPROD.split("Execute job once")[0]
@@ -122,6 +132,7 @@ class WorkflowTests(unittest.TestCase):
     def test_generator_is_not_stale(self) -> None:
         import generate_job_workflow as gen
 
+        self.assertEqual(gen.render_dev(), DEV)
         self.assertEqual(gen.render_preprod(), PREPROD)
         self.assertEqual(gen.render_prod(), PROD)
 

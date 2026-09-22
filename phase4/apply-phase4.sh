@@ -191,6 +191,12 @@ put_file ".github/workflows/cloud-run-preprod-rollback.yaml" \
 put_file ".github/workflows/cloud-run-prod-rollback.yaml" \
   "${PHASE4_DIR}/workflows/cloud-run-prod-rollback.yaml" "$PHASE4_BRANCH" \
   "Phase 4: Prod Cloud Run service rollback form."
+put_file ".github/workflows/cloud-run-dev-service.yaml" \
+  "${PHASE4_DIR}/workflows/cloud-run-dev-service.yaml" "$PHASE4_BRANCH" \
+  "Phase 4: Dev Cloud Run service deploy form (sujho-dev only)."
+put_file ".github/workflows/cloud-run-dev-rollback.yaml" \
+  "${PHASE4_DIR}/workflows/cloud-run-dev-rollback.yaml" "$PHASE4_BRANCH" \
+  "Phase 4: Dev Cloud Run service rollback form."
 put_file ".github/workflows/cloud-run-preprod-service.yaml" \
   "${PHASE4_DIR}/workflows/cloud-run-preprod-service.yaml" "$PHASE4_BRANCH" \
   "Phase 4: Pre-Prod Cloud Run service deploy form."
@@ -200,6 +206,9 @@ put_file ".github/workflows/cloud-run-prod-service.yaml" \
 put_file ".github/workflows/approve-preprod.yaml" \
   "${PHASE4_DIR}/workflows/approve-preprod.yaml" "$PHASE4_BRANCH" \
   "Phase 4: Lead stamps preprod-approved for one image."
+put_file ".github/workflows/cloud-run-dev-deploy.yaml" \
+  "${PHASE4_DIR}/jobs/workflows/cloud-run-dev-deploy.yaml" "$PHASE4_BRANCH" \
+  "Phase 4: Dev Cloud Run job deploy form (sujho-dev only)."
 put_file ".github/workflows/cloud-run-preprod-deploy.yaml" \
   "${PHASE4_DIR}/jobs/workflows/cloud-run-preprod-deploy.yaml" "$PHASE4_BRANCH" \
   "Phase 4: Pre-Prod Cloud Run job deploy form."

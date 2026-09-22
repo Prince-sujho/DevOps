@@ -19,13 +19,7 @@ USES_RE = re.compile(
     r"(?P<comment>[^\n]*)"
 )
 
-SKIP_PARTS = {"DevOps-HTML"}
 SKIP_DIRS = {ROOT / "phase4" / "ci"}
-
-
-def pin_ref(name: str) -> str:
-    pin = PINS[name]
-    return f"{name}@{pin['sha']}"
 
 
 def pin_comment(name: str) -> str:
@@ -45,8 +39,6 @@ def pin_text(text: str) -> str:
 
 def should_skip(path: Path) -> bool:
     if path.suffix not in {".yml", ".yaml"}:
-        return True
-    if any(part in SKIP_PARTS for part in path.parts):
         return True
     for skip in SKIP_DIRS:
         try:

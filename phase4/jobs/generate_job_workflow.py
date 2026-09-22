@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Write the two GitHub Action forms from catalog.jobs.json.
+"""Write the GitHub Action forms from catalog.jobs.json.
 
-Two files = which environment (no env/mode dropdown):
+One file = which environment (no env/mode dropdown):
+  cloud-run-dev-deploy.yaml     — Dev; build and deploy inside sujho-dev
   cloud-run-preprod-deploy.yaml — Pre-Prod; build in sujho-dev, deploy to preprod
   cloud-run-prod-deploy.yaml    — Prod; deploy-only (same image, refuse rebuild)
 
@@ -20,10 +21,9 @@ sys.path.insert(0, str(HERE.parent))
 import workflow_common as wc  # noqa: E402
 CATALOG = json.loads((HERE / "catalog.jobs.json").read_text())
 PINS = json.loads((HERE.parent.parent / "action-pins.json").read_text())["pins"]
+OUT_DEV = HERE / "workflows" / "cloud-run-dev-deploy.yaml"
 OUT_PREPROD = HERE / "workflows" / "cloud-run-preprod-deploy.yaml"
 OUT_PROD = HERE / "workflows" / "cloud-run-prod-deploy.yaml"
-OLD_SINGLE = HERE / "workflows" / "deploy-cloudrun-job.yml"
-
 
 def uses(name: str) -> str:
     return wc.pin(PINS, name)
@@ -128,6 +128,41 @@ _SUBMIT_AND_EXECUTE = """      - name: Start Cloud Build for this job
           fi
 """
 
+DEV_TEMPLATE = (
+    """name: Deploy Cloud Run job (Dev)
+
+# Manual only. Merge to main does not run this.
+# Opening this file IS choosing Dev. Job dropdown only (no env/mode).
+# Build and deploy stay in sujho-dev. Does not stamp preprod-approved.
+
+on:
+  workflow_dispatch:
+"""
+    + _INPUTS.replace(
+        "Prod must be the commit tested on Pre-Prod.",
+        "Dev only. Does not stamp preprod-approved.",
+    )
+    + _CONCURRENCY.replace("__TARGET__", "sujho-dev")
+    + """
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    name: deploy-cloudrun-job-dev
+    runs-on: ubuntu-latest
+    steps:
+"""
+    + _AUTH_STEPS.replace("__WIF_SA__", "GCP_WIF_SERVICE_ACCOUNT_DEV")
+    + _SUBMIT_AND_EXECUTE.replace("__BUILD_PROJECT__", "sujho-dev")
+    .replace("__TARGET__", "sujho-dev")
+    .replace("__CONFIG__", "ci/jobs/job-build-deploy.yaml")
+    .replace("__REGISTRY__", CATALOG["registry"])
+    .replace("__IMAGE__", CATALOG["image_groups"]["knowledge-store"]["image"])
+    .replace("__PIN_DIGEST__", "0")
+)
+
 PREPROD_TEMPLATE = (
     """name: Deploy Cloud Run job (Pre-Prod)
 
@@ -208,6 +243,10 @@ def _fill(template: str) -> str:
     )
 
 
+def render_dev() -> str:
+    return _fill(DEV_TEMPLATE)
+
+
 def render_preprod() -> str:
     return _fill(PREPROD_TEMPLATE)
 
@@ -217,12 +256,11 @@ def render_prod() -> str:
 
 
 def main() -> None:
-    OUT_PREPROD.parent.mkdir(parents=True, exist_ok=True)
+    OUT_DEV.parent.mkdir(parents=True, exist_ok=True)
+    OUT_DEV.write_text(render_dev())
     OUT_PREPROD.write_text(render_preprod())
     OUT_PROD.write_text(render_prod())
-    if OLD_SINGLE.is_file():
-        OLD_SINGLE.unlink()
-        print(f"removed {OLD_SINGLE.relative_to(HERE)}")
+    print(f"wrote {OUT_DEV.relative_to(HERE)}")
     print(f"wrote {OUT_PREPROD.relative_to(HERE)}")
     print(f"wrote {OUT_PROD.relative_to(HERE)}")
 

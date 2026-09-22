@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Write the two GitHub Action forms for Cloud Run *services*.
+"""Write the GitHub Action forms for Cloud Run *services*.
 
 Jobs already own cloud-run-*-deploy.yaml. These files are:
+  cloud-run-dev-service.yaml     — build and deploy inside sujho-dev
   cloud-run-preprod-service.yaml — build in sujho-dev, deploy to sujho-preprod
   cloud-run-prod-service.yaml    — deploy-only to sujho-478914
 
@@ -17,6 +18,7 @@ import workflow_common as wc
 HERE = Path(__file__).resolve().parent
 CATALOG = json.loads((HERE / "catalog.json").read_text())
 PINS = json.loads((HERE.parent / "action-pins.json").read_text())["pins"]
+OUT_DEV = HERE / "workflows" / "cloud-run-dev-service.yaml"
 OUT_PREPROD = HERE / "workflows" / "cloud-run-preprod-service.yaml"
 OUT_PROD = HERE / "workflows" / "cloud-run-prod-service.yaml"
 
@@ -36,7 +38,15 @@ def image_case() -> str:
     return "\n".join(lines)
 
 
-def render(name: str, target: str, sa_var: str, build_project: str, config_suffix: str, pin_digest: str) -> str:
+def render(
+    name: str,
+    target: str,
+    sa_var: str,
+    build_project: str,
+    config_suffix: str,
+    pin_digest: str,
+    commit_help: str,
+) -> str:
     opts = "\n".join(f"          - {i}" for i in ordered_service_ids())
     checkout = wc.pin(PINS, "actions/checkout")
     auth = wc.pin(PINS, "google-github-actions/auth")
@@ -58,7 +68,7 @@ on:
         options:
 {opts}
       commit:
-        description: Git commit to deploy (empty = this run's github.sha). Prod must be the commit tested on Pre-Prod.
+        description: {commit_help}
         required: false
         type: string
         default: ""
@@ -119,6 +129,18 @@ jobs:
 """
 
 
+def render_dev() -> str:
+    return render(
+        "Deploy Cloud Run service (Dev)",
+        "sujho-dev",
+        "GCP_WIF_SERVICE_ACCOUNT_DEV",
+        "sujho-dev",
+        "build-deploy",
+        "0",
+        "Git commit to deploy (empty = this run's github.sha). Dev only. Does not stamp preprod-approved.",
+    )
+
+
 def render_preprod() -> str:
     return render(
         "Deploy Cloud Run service (Pre-Prod)",
@@ -127,6 +149,7 @@ def render_preprod() -> str:
         "sujho-dev",
         "build-deploy",
         "0",
+        "Git commit to deploy (empty = this run's github.sha). Prod must be the commit tested on Pre-Prod.",
     )
 
 
@@ -138,13 +161,16 @@ def render_prod() -> str:
         "sujho-478914",
         "deploy-only",
         "1",
+        "Git commit to deploy (empty = this run's github.sha). Prod must be the commit tested on Pre-Prod.",
     )
 
 
 def main() -> None:
-    OUT_PREPROD.parent.mkdir(parents=True, exist_ok=True)
+    OUT_DEV.parent.mkdir(parents=True, exist_ok=True)
+    OUT_DEV.write_text(render_dev())
     OUT_PREPROD.write_text(render_preprod())
     OUT_PROD.write_text(render_prod())
+    print(f"wrote {OUT_DEV.relative_to(HERE)}")
     print(f"wrote {OUT_PREPROD.relative_to(HERE)}")
     print(f"wrote {OUT_PROD.relative_to(HERE)}")
 
