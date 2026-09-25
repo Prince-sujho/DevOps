@@ -1,0 +1,42 @@
+{
+  "registry": "asia-south1-docker.pkg.dev/sujho-preprod/services",
+  "region": "asia-south1",
+  "image_groups": {
+    "knowledge-store": {
+      "image": "knowledge-store-jobs",
+      "dockerfile": "knowledge_store/Dockerfile",
+      "gitlinks": ["knowledge_store", "infra"],
+      "runtime_sa": "knowledge-store-run",
+      "cpu": "2",
+      "task_timeout": "24h",
+      "tasks": 1,
+      "parallelism": 1,
+      "max_retries": 0
+    }
+  },
+  "jobs": [
+    {
+      "id": "knowledge-store-ingest",
+      "memory": "4Gi",
+      "needs_entry_id": true
+    },
+    {
+      "id": "knowledge-store-remove",
+      "memory": "2Gi",
+      "needs_entry_id": true
+    },
+    {
+      "id": "knowledge-store-sessions",
+      "memory": "2Gi",
+      "schedule": "0 * * * *"
+    },
+    {
+      "id": "knowledge-store-import-ncert",
+      "memory": "2Gi"
+    },
+    {
+      "id": "knowledge-store-import-educart",
+      "memory": "2Gi"
+    }
+  ]
+}

@@ -1,0 +1,141 @@
+name: Deploy Cloud Run job (Pre-Prod)
+
+# Manual only. Merge to main does not run this.
+# Runs entirely inside sujho-preprod. sujho-dev is never touched by this file.
+
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: Cloud Run job (one per run)
+        required: true
+        type: choice
+        default: knowledge-store-sessions
+        options:
+          - knowledge-store-sessions
+          - knowledge-store-ingest
+          - knowledge-store-remove
+          - knowledge-store-import-ncert
+          - knowledge-store-import-educart
+      commit:
+        description: Git commit to deploy (empty = tip of main)
+        required: false
+        type: string
+        default: ""
+      entry_id:
+        description: Required to execute ingest/remove. Ignored for other jobs.
+        required: false
+        type: string
+        default: ""
+      execute:
+        description: Run the job once after a successful deploy
+        type: boolean
+        default: false
+
+concurrency:
+  group: cloudrun-job-sujho-preprod-${{ inputs.job }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - name: Refuse unless this run is on main
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "Refuse: dispatch from main, not ${{ github.ref }}"
+            exit 1
+          fi
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Resolve commit and refuse unless it's an ancestor of main
+        id: resolve
+        run: |
+          set -euo pipefail
+          SHA="${{ inputs.commit }}"
+          if [ -z "$SHA" ]; then
+            SHA="$(git rev-parse origin/main)"
+          fi
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$SHA" origin/main; then
+            echo "Refuse: $SHA is not on main."
+            exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+
+      - uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_WIF_SERVICE_ACCOUNT_PREPROD }}
+
+      - uses: google-github-actions/setup-gcloud@6a7c903a70c8625ed6700fa299f5ddb4ca6022e9 # v2.1.5
+
+      - name: Start Cloud Build for this job
+        env:
+          JOB_ID: ${{ inputs.job }}
+          SHA: ${{ needs.validate.outputs.sha }}
+        run: |
+          set -euo pipefail
+          SHORT="$(printf '%s' "$SHA" | cut -c1-7)"
+          eval "$(python3 jobs/scripts/lookup_job.py --id "$JOB_ID")"
+
+          gcloud builds submit --no-source \
+            --project=sujho-preprod \
+            --region=asia-south1 \
+            --config=ci/job-build-deploy.yaml \
+            --substitutions=\
+_JOB_ID="$JOB_ID",\
+_DOCKERFILE="$DOCKERFILE",\
+_IMAGE="$IMAGE",\
+_GITLINKS="$GITLINKS",\
+_RUNTIME_SA="$RUNTIME_SA",\
+_CPU="$CPU",\
+_MEMORY="$MEMORY",\
+_TASK_TIMEOUT="$TASK_TIMEOUT",\
+_TASKS="$TASKS",\
+_PARALLELISM="$PARALLELISM",\
+_MAX_RETRIES="$MAX_RETRIES",\
+_ENTRY_FILE="$ENTRY_FILE",\
+_ENTRY_MODULE="$ENTRY_MODULE",\
+_SCHEDULE="$SCHEDULE",\
+_COMMIT_SHA="$SHA",\
+_SHORT_SHA="$SHORT"
+
+      - name: Execute job once
+        if: ${{ inputs.execute }}
+        env:
+          JOB_ID: ${{ inputs.job }}
+          PROJECT: sujho-preprod
+          ENTRY_ID: ${{ inputs.entry_id }}
+        run: |
+          set -euo pipefail
+          eval "$(python3 jobs/scripts/lookup_job.py --id "$JOB_ID")"
+          if [ "$NEEDS_ENTRY_ID" = "1" ]; then
+            if [ -z "$ENTRY_ID" ]; then
+              echo "this job needs entry_id to execute"
+              exit 1
+            fi
+            gcloud run jobs execute "$JOB_ID" \
+              --project="$PROJECT" --region=asia-south1 \
+              --update-args="$ENTRY_ID" --wait
+          else
+            gcloud run jobs execute "$JOB_ID" \
+              --project="$PROJECT" --region=asia-south1 --wait
+          fi

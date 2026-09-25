@@ -1,0 +1,18 @@
+# One copy of this file per repo (Sujho/sujho and all eleven service repos).
+# Weekly, not per-PR — this is a bot opening its own PRs, not a gate on
+# anyone else's. Those PRs go through the normal one-Lead-approval path
+# like any other change.
+
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5

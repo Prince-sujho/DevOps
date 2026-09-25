@@ -1,0 +1,120 @@
+name: Weekly eval replay
+
+# Drift detection against Eval-Suite (RespondService, fake users, real
+# OpenAI/Gemini/Neo4j), once a week on Sujho/sujho. Not a merge gate.
+# Missing keys skip — the schedule must not go red. Real spend limits are
+# at the provider, not here. Cases live in Eval-Suite/eval_suite/cases/.
+#
+# This job reports only — it never gates a deploy.
+
+on:
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+jobs:
+  eval-replay:
+    name: eval-replay
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.13"
+
+      - name: Restore eval-history from last run
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RUN_ID="$(gh run list --workflow "Weekly eval replay" --status completed --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+          [ -n "$RUN_ID" ] || exit 0
+          gh run download "$RUN_ID" -n eval-result --dir /tmp/last-eval || exit 0
+          if [ -f /tmp/last-eval/eval-history.json ]; then
+            cp /tmp/last-eval/eval-history.json eval-history.json
+          fi
+
+      - uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
+        id: auth
+        continue-on-error: true
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_WIF_SERVICE_ACCOUNT_EVAL }}
+
+      - uses: google-github-actions/setup-gcloud@6a7c903a70c8625ed6700fa299f5ddb4ca6022e9 # v2.1.5
+        if: steps.auth.outcome == 'success'
+        continue-on-error: true
+
+      - name: Fetch Eval-Suite secrets from Secret Manager
+        if: steps.auth.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          mask_set() {
+            local name="$1" secret="$2"
+            local value
+            value="$(gcloud secrets versions access latest --secret="$secret")"
+            echo "::add-mask::${value}"
+            echo "${name}=${value}" >> "$GITHUB_ENV"
+          }
+          mask_set OPENAI_API_KEY eval-openai-key
+          mask_set GEMINI_API_KEY eval-gemini-key
+          mask_set NEO4J_URI eval-neo4j-uri
+          mask_set NEO4J_USER eval-neo4j-user
+          mask_set NEO4J_PASSWORD eval-neo4j-password
+
+      - name: Install product + test requirements
+        continue-on-error: true
+        run: python tests/ci/pipeline.py install
+
+      - name: Replay
+        run: python3 scripts/eval_replay.py
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: eval-result
+          path: |
+            eval-result.json
+            eval-history.json
+            Eval-Suite/reports/
+          if-no-files-found: ignore
+
+      - name: Post on the tracking issue
+        if: always() && vars.EVAL_TRACKING_ISSUE != ''
+        continue-on-error: true
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const fs = require('fs');
+            if (!fs.existsSync('eval-result.json')) return;
+            const r = JSON.parse(fs.readFileSync('eval-result.json', 'utf8'));
+            const n = Number(process.env.ISSUE);
+            if (!n) return;
+            let body = `<!-- phase3-eval -->\n### Weekly eval replay\n\n`;
+            if (r.skipped) body += `Skipped: ${r.reason}\n`;
+            if (r.fail_open) body += `Fail-open (spend/auth) — not a regression signal.\n`;
+            if (r.counts) body += `pass=${r.counts.pass || 0} fail=${r.counts.fail || 0} xfail=${r.counts.xfail || 0} xpass=${r.counts.xpass || 0}\n`;
+            if ((r.escalate || []).length) body += `Escalate (failed two weeks running): ${r.escalate.join(', ')}\n`;
+            if (r.flag_review) body += `\nNeeds a human look — not a CI failure.\n`;
+            if (r.full_pass) body += `\nFull pass — no action needed, this is a report only.\n`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: n, body,
+            });
+        env:
+          ISSUE: ${{ vars.EVAL_TRACKING_ISSUE }}

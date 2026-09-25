@@ -1,49 +1,70 @@
 # Sujho DevOps Plan
 
-This folder is the plan for how Sujho code gets onto GitHub and then onto Google Cloud. None of it is turned on — putting this folder on GitHub changes nothing for real users.
+Plan, not live. Code gets checked, built, tested on a practice version,
+then sent to real users only with a senior's OK — every step a person
+decides, nothing automatic. Meant to be read, not run.
 
-Today the live product still updates the old way: a push to `main` starts a build and often ships a tag called `latest`.
+## phase1 — who can merge
 
-The full plan is in [`docs/sujho-github-workflow-plan-full.md`](docs/sujho-github-workflow-plan-full.md).
+Only a senior person can let code in, and they can't approve their own work.
 
-## How shipping works
+- `CODEOWNERS` — only the two Leads can approve
+- `apply-phase1.sh` — turns the rule on in GitHub
+- `verify-phase1.sh` — checks it actually applied
+- `prove-phase1.sh` — proves the rule can't be bypassed
+- `validate.py` — checks the logic locally
+- `lib.sh` — shared code the scripts above use
 
-GitHub has one branch, `main`. Dev, Pre-Prod, and Prod are separate Google Cloud projects, not branches.
+## phase2 — build, deploy, rollback
 
-A merged pull request does not update a running app. A person opens one file, picks one service or job, and clicks Run.
+Building the code, testing it safely, getting sign-off, sending it to
+real users, undoing it if something breaks.
 
-Dev is a practice project. Pre-Prod is for phone testing. Prod is the real users. An image is built once, checked on Pre-Prod, and only then sent to Prod. Prod does not build it again.
+- `ci/services.json` — settings per service (memory, CPU, timeout)
+- `ci/build-deploy.yaml` — builds + deploys to Pre-Prod, runs the 3 checks first
+- `ci/deploy-only.yaml` — promotes the same image to Prod, no rebuild
+- `ci/checkout-gitlinks.py` — pulls each repo at the exact commit, never "latest"
+- `ci/cleanup-policy.json` — auto-deletes old images after 3 months
+- `ci/gates/mypy_ratchet.py` — type-error count can't go up
+- `ci/gates/resolve_baseline.py` — reads what's currently live, so checks compare against that, not a PR
+- `ci/gates/verify_revision.py` — confirms a deploy is healthy before it takes traffic
+- `workflows/*.yaml` — the actual "click here to deploy / roll back" buttons
+- `scripts/rollback-cloudrun.sh`, `pick_rollback_revision.py` — roll back to the last version that really worked
+- `scripts/provision-projects.sh`, `provision-wif.sh`, `developer-connect-setup.sh`, `pin-submodules.sh` — one-time GCP setup
+- `IAM-table.md` — exactly who/what gets which access, done by hand
+- `pointer-bump/` — auto-opens a PR when a service repo updates, so nothing gets forgotten
+- `jobs/` — same system as above, for background jobs instead of live services
 
-Passwords stay in Google Cloud. GitHub only stores the login names, not the passwords.
+## phase3 — weekly health check (off for now)
 
-## What is in this folder
+A weekly report. Doesn't stop or approve anything — just tells us later
+if something's quietly wrong.
 
-```
-phase1/        Who can approve a pull request
-phase2/        Tests that run on a pull request
-phase3/        An AI comment on a pull request
-phase4/        Dev, Pre-Prod, Prod, approval, and rollback
-  jobs/        Jobs that run and then stop
-phase5/        An old check we removed
-phase6/        A weekly report
-docs/          The written plan
-tests/         A copy of the product tests
-Eval-Suite/    A copy of the evals
-```
+- `workflows/mutation.yml`, `scripts/mutation_report.py` — checks if our tests would actually catch a bug
+- `workflows/eval-replay.yml`, `scripts/eval_replay.py` — checks the AI hasn't quietly gotten worse
+- `apply-phase3.sh`, `verify-phase3.sh`, `validate.py`, `lib.sh` — same setup/check pattern as the other phases
 
-Phase 4 files are generated from `phase4/catalog.json`. Change the catalog, then regenerate. Do not edit the generated files by hand.
+## Other folders
 
-## Check on your laptop
+- `tests` — a copy of the checks that prove the product actually works
+- `Eval-Suite` — a copy of the checks on how well the AI parts behave. Not decided yet if it's part of this plan.
 
-```bash
-for d in phase1 phase2 phase3 phase4 phase5 phase6 phase4/jobs; do
-  (cd "$d" && python3 validate.py)
-done
-```
+## What's still left — Arnav, this is for you
 
-## Not done yet
+This is the plan, not the finished system. Here's what's still open on
+my end:
 
-- The Dev and Pre-Prod Google Cloud projects do not exist. Creating them costs money.
-- The Prod connection name in these files is `sujho-github-dc`. The live name is `sujho-github-dc-org`.
-- These files store images under `sujho-dev/services/<image>`. Live Prod stores them under `$PROJECT/<service>/api`.
-- Nothing here creates Dev databases or passwords. Prod user data is not copied into Dev.
+- `sujho-preprod` doesn't exist yet as a project.
+- IAM roles aren't granted anywhere — I've written the table, nobody's
+  worked through it by hand yet.
+- Pre-Prod databases, secrets, and a test WhatsApp number don't exist.
+- The Pre-Prod data pipeline (anonymised copy of Prod, one-way) isn't
+  designed, let alone built.
+- Narrowing the Cloud Build identity itself (`prod-builder`) — I've
+  written the design, but nobody's decided when to actually do it.
+- Phase 3's weekly checks (mutation testing + eval replay) are ready but
+  switched off — waiting on the test suite being committed and a runner
+  machine existing.
+- None of this has been run against real GCP. Every recipe here has been
+  checked for internal consistency, not proven to actually execute — that
+  only happens once `sujho-preprod` exists and someone runs it for real.

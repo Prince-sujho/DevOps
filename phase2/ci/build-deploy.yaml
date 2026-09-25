@@ -1,0 +1,202 @@
+# Shared Pre-Prod recipe for every service. Values come from ci/services.json.
+# Runs in sujho-preprod only. Order: gates -> build -> no-traffic deploy -> verify -> shift traffic.
+# Submitted with --no-source, so the workspace starts empty — fetch-sujho is what fills it.
+
+substitutions:
+  _SERVICE_NAME: ""
+  _DOCKERFILE: ""
+  _GITLINKS: ""
+  _PRE_BUILD_DIR: ""
+  _CPU: "1"
+  _MEMORY: "512Mi"
+  _TIMEOUT: "240s"
+  _MIN_INSTANCES: "1"
+  _MAX_INSTANCES: "10"
+  _RUN_ARGS: "--allow-unauthenticated"
+  _VERIFY_METHOD: "health"
+  _TARGET_PROJECT: "sujho-preprod"
+  _REGISTRY: "asia-south1-docker.pkg.dev/sujho-preprod/services"
+  _COMMIT_SHA: ""
+  _SHORT_SHA: ""
+  _REGION: "asia-south1"
+  _DC_CONNECTION: "sujho-github-dc-org"
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+steps:
+  # inline, self-contained: nothing from this repo exists in the workspace
+  # yet, so this can't call a script that lives inside it (circular)
+  - id: fetch-sujho
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        URI="$(gcloud developer-connect git-repository-links describe sujho-sujho \
+          --location="${_REGION}" --connection="${_DC_CONNECTION}" --project="${_TARGET_PROJECT}" \
+          --format='value(cloneUri)')"
+        [ -n "$URI" ] || { echo "refuse: sujho-sujho Developer Connect link not found"; exit 1; }
+        git init .
+        git remote add origin "$URI"
+        git fetch --depth=1 origin "${_COMMIT_SHA}"
+        git checkout --force "${_COMMIT_SHA}"
+
+  # bash entrypoint so $_GITLINKS word-splits into separate --paths args
+  - id: fetch-gitlinks
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        python3 ci/checkout-gitlinks.py --root=. --paths $_GITLINKS \
+          --project="${_TARGET_PROJECT}" --region="${_REGION}" --connection="${_DC_CONNECTION}"
+    waitFor: ["fetch-sujho"]
+
+  # baseline for semgrep/mypy = whatever's live now, read off the revision's
+  # own env var, not an unverified annotation value
+  - id: resolve-baseline
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        BASE_SHA="$(python3 ci/gates/resolve_baseline.py --kind=services \
+          --name="${_SERVICE_NAME}" --project="${_TARGET_PROJECT}" --region="${_REGION}")"
+        if [ -z "$BASE_SHA" ]; then
+          echo "no prior revision for ${_SERVICE_NAME}, first deploy"
+          BASE_SHA="${_COMMIT_SHA}"
+        fi
+        echo "$BASE_SHA" > /workspace/.baseline_sha
+        echo "baseline commit: $BASE_SHA"
+    waitFor: ["fetch-sujho"]
+
+  # gate 1: static — ruff, mypy ratchet, semgrep, secrets. Needs git for the
+  # mypy worktree diff and semgrep's --baseline-commit; python:3.12-slim has none.
+  - id: gate-1-static
+    name: python:3.12-slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        apt-get update -qq && apt-get install -y -qq git >/dev/null
+        pip install --quiet ruff mypy semgrep detect-secrets
+        ruff check .
+        python3 ci/gates/mypy_ratchet.py --baseline-sha "$(cat /workspace/.baseline_sha)"
+        semgrep scan --config=auto --error --baseline-commit "$(cat /workspace/.baseline_sha)"
+        detect-secrets-hook --baseline tests/ci/.secrets.baseline $(git ls-files)
+    waitFor: ["fetch-gitlinks", "resolve-baseline"]
+
+  # gate 2: the ~65 kept tests, against a Firestore emulator
+  - id: gate-2-invariants
+    name: python:3.12-slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        apt-get update -qq && apt-get install -y -qq default-jre-headless curl >/dev/null
+        curl -sSL https://sdk.cloud.google.com | bash -s -- --disable-prompts >/dev/null
+        gcloud components install cloud-firestore-emulator --quiet
+        gcloud emulators firestore start --host-port=localhost:8080 &
+        pip install --quiet -e ./infra -r tests/requirements.txt
+        export FIRESTORE_EMULATOR_HOST=localhost:8080
+        pytest -q \
+          tests/integration \
+          tests/api/user_service/test_auth_boundary.py \
+          tests/api/whatsapp_adapter/test_webhook_signature.py \
+          tests/unit/whatsapp_adapter/test_flow_crypto.py \
+          tests/unit/infra/test_leases.py \
+          tests/e2e/test_idempotency.py \
+          tests/e2e/test_webhook_signature.py
+    waitFor: ["gate-1-static"]
+
+  # gate 3: suite guardrails — assertions real, count hasn't dropped
+  - id: gate-3-guardrails
+    name: python:3.12-slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        python3 tests/tooling/check_assertions.py
+        python3 tests/tooling/check_test_count.py
+    waitFor: ["gate-2-invariants"]
+
+  - id: pre-build
+    name: gcr.io/cloud-builders/npm
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        if [ -n "${_PRE_BUILD_DIR}" ]; then
+          cd "${_PRE_BUILD_DIR}" && npm ci && npm run build
+        fi
+    waitFor: ["gate-3-guardrails"]
+
+  - id: build-image
+    name: gcr.io/kaniko-project/executor@sha256:4e7a52dd1f14872430652bb3b027405b8dfd17c4538751c620ac005741ef9698
+    args:
+      - --dockerfile=${_DOCKERFILE}
+      - --context=dir:///workspace
+      - --destination=${_REGISTRY}/${_SERVICE_NAME}:sha-${_SHORT_SHA}
+      - --cache=true
+      - --cache-ttl=168h
+    waitFor: ["pre-build"]
+
+  - id: deploy-no-traffic
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        gcloud run deploy "${_SERVICE_NAME}" \
+          --project="${_TARGET_PROJECT}" --region="${_REGION}" \
+          --image="${_REGISTRY}/${_SERVICE_NAME}:sha-${_SHORT_SHA}" \
+          --no-traffic --tag="build-${_SHORT_SHA}" \
+          --cpu="${_CPU}" --memory="${_MEMORY}" --timeout="${_TIMEOUT}" \
+          --min-instances="${_MIN_INSTANCES}" --max-instances="${_MAX_INSTANCES}" \
+          --update-env-vars="RELEASE_COMMIT_SHA=${_COMMIT_SHA},RELEASE_IMAGE_DIGEST=pending" \
+          ${_RUN_ARGS}
+    waitFor: ["build-image"]
+
+  # polls up to 15x so a slow-starting container doesn't fail the check
+  - id: verify
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        python3 ci/gates/verify_revision.py \
+          --service="${_SERVICE_NAME}" --project="${_TARGET_PROJECT}" \
+          --region="${_REGION}" --tag="build-${_SHORT_SHA}" \
+          --expect-sha="${_COMMIT_SHA}" --method="${_VERIFY_METHOD}" \
+          --attempts=15
+    waitFor: ["deploy-no-traffic"]
+
+  - id: shift-traffic
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        gcloud run services update-traffic "${_SERVICE_NAME}" \
+          --project="${_TARGET_PROJECT}" --region="${_REGION}" \
+          --to-latest
+        REVISION="$(gcloud run services describe "${_SERVICE_NAME}" \
+          --project="${_TARGET_PROJECT}" --region="${_REGION}" \
+          --format='value(status.traffic[0].revisionName)')"
+        gcloud run revisions update "$REVISION" \
+          --project="${_TARGET_PROJECT}" --region="${_REGION}" \
+          --update-labels=served=true
+        echo "traffic on $REVISION, served=true"
+    waitFor: ["verify"]
+
+timeout: 3600s

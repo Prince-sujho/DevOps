@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
-# Local by default. --remote reads GitHub (no writes).
-
 usage() {
   cat <<'EOF'
   ./verify-phase2.sh           # validate.py only
-  ./verify-phase2.sh --remote  # workflow on `main` + required-check safety
+  ./verify-phase2.sh --remote  # also checks the files actually on sujho/main
 EOF
 }
 
@@ -24,57 +22,86 @@ for arg in "$@"; do
 done
 
 python3 "${PHASE2_DIR}/validate.py"
+python3 "${PHASE2_DIR}/jobs/validate.py"
 
 if [ "$REMOTE" -eq 0 ]; then
-  echo "local invariants ok. --remote after the workflow PRs merge to main."
+  echo "local invariants ok. --remote after the sujho PR merges to main."
   exit 0
 fi
 
 fail=0
-
-workflow_on_dev() {
-  local repo="$1"
-  gh api "repos/${ORG}/${repo}/contents/${PHASE2_WORKFLOW_DEST}?ref=main" --jq .path 2>/dev/null || true
-}
-
-required_contexts() {
-  local repo="$1"
-  gh api "repos/${ORG}/${repo}/rulesets" --jq \
-    '.[] | select(.conditions.ref_name.include[]? == "refs/heads/main") | .id' \
-    | while read -r id; do
-        [ -n "$id" ] || continue
-        gh api "repos/${ORG}/${repo}/rulesets/${id}" --jq \
-          '.rules[]? | select(.type=="required_status_checks") | .parameters.required_status_checks[].context'
-      done
-}
-
-echo "--- workflow lives on main (PR base) ---"
-for REPO in "${PHASE2_CHECK_REPOS[@]}"; do
-  if [ -z "$(workflow_on_dev "$REPO")" ]; then
-    echo "FAIL ${REPO}: ${PHASE2_WORKFLOW_DEST} not on main"
+for entry in "${PHASE2_FILE_MAP[@]}"; do
+  f="${entry%%:*}"
+  path="$(gh api "repos/${ORG}/${PHASE2_REPO}/contents/${f}?ref=main" --jq .path 2>/dev/null || true)"
+  if [ -z "$path" ]; then
+    echo "FAIL ${PHASE2_REPO}: missing on main ${f}"
     fail=1
   else
-    echo "ok   ${REPO}: workflow on main"
+    echo "ok   ${f}"
   fi
 done
 
-echo "--- skip list must not get the umbrella Python suite ---"
-for REPO in "${PHASE2_SKIP_REPOS[@]}"; do
-  echo "skip ${REPO} (intentional — suite is ${PHASE2_UMBRELLA_REPO}/tests)"
+body_of() {
+  gh api "repos/${ORG}/${PHASE2_REPO}/contents/$1?ref=main" --jq .content 2>/dev/null \
+    | python3 -c 'import sys,base64; d=sys.stdin.read().replace("\n",""); print(base64.b64decode(d).decode() if d else "")'
+}
+
+build_body="$(body_of ci/build-deploy.yaml)"
+deploy_body="$(body_of ci/deploy-only.yaml)"
+
+for label_body in "build-deploy:$build_body" "deploy-only:$deploy_body"; do
+  label="${label_body%%:*}"
+  body="${label_body#*:}"
+  if echo "$body" | grep -q ':latest'; then
+    echo "FAIL ${label} on main still tags :latest"
+    fail=1
+  fi
+  if echo "$body" | grep -q -- '--set-env-vars'; then
+    echo "FAIL ${label} on main uses --set-env-vars (must be --update-env-vars)"
+    fail=1
+  fi
+  if echo "$body" | grep -q 'preprod-approved\|prod-live'; then
+    echo "FAIL ${label} on main still references a removed approval tag"
+    fail=1
+  fi
+  if echo "$body" | grep -q 'sujho-dev'; then
+    echo "FAIL ${label} on main still touches sujho-dev (decision 13: sandbox only, no CI)"
+    fail=1
+  fi
 done
 
-echo "--- required checks: only pr-checks, and only if it has run ---"
-for REPO in "${PHASE2_CHECK_REPOS[@]}"; do
-  ctx="$(required_contexts "$REPO" | sort -u | tr '\n' ' ')"
-  if echo "$ctx" | grep -qw lint || echo "$ctx" | grep -qw unit-tests; then
-    echo "FAIL ${REPO}: required lint/unit-tests will hang on docs-only PRs — require \`pr-checks\` only"
-    fail=1
-    continue
-  fi
-  if echo "$ctx" | grep -qw "$PHASE2_REQUIRED_CHECK"; then
-    echo "ok   ${REPO}: required ${PHASE2_REQUIRED_CHECK}"
+if ! echo "$build_body" | grep -q 'served=true'; then
+  echo "FAIL build-deploy on main does not label served=true"
+  fail=1
+fi
+if ! echo "$deploy_body" | grep -q 'served=true'; then
+  echo "FAIL deploy-only on main does not label served=true"
+  fail=1
+fi
+
+prod_service_body="$(body_of .github/workflows/cloud-run-prod-service.yaml)"
+if ! echo "$prod_service_body" | grep -q 'environment: production'; then
+  echo "FAIL cloud-run-prod-service.yaml on main has no production Environment gate"
+  fail=1
+fi
+
+for repo in sujho redirect-service; do
+  methods="$(
+    gh api "repos/${ORG}/${repo}/rulesets" --jq \
+      '.[] | select(.conditions.ref_name.include[]? == "refs/heads/main") | .id' \
+      | while read -r id; do
+          [ -n "$id" ] || continue
+          gh api "repos/${ORG}/${repo}/rulesets/${id}" --jq \
+            '.rules[]? | select(.type=="pull_request") | .parameters.allowed_merge_methods[]?'
+        done | sort -u | tr '\n' ' '
+  )"
+  if echo "$methods" | grep -qw merge && ! echo "$methods" | grep -Eqw 'squash|rebase'; then
+    echo "ok   ${repo} main: merge-only"
+  elif [ -z "$methods" ]; then
+    echo "note ${repo} main: no PR ruleset yet (Phase 1)"
   else
-    echo "note ${REPO}: ${PHASE2_REQUIRED_CHECK} not required yet (expected until --require-checks)"
+    echo "FAIL ${repo} main: must be merge-only (got: ${methods})"
+    fail=1
   fi
 done
 

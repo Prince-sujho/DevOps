@@ -1,0 +1,114 @@
+# Prod recipe. No build, no tests, never fetches service source — deploys
+# the exact image already tested in Pre-Prod. Image stays in sujho-preprod's
+# warehouse; Prod only reads it. Still needs the base repo checked out for
+# its own gate scripts — submitted with --no-source, workspace starts empty.
+
+substitutions:
+  _SERVICE_NAME: ""
+  _CPU: "1"
+  _MEMORY: "512Mi"
+  _TIMEOUT: "240s"
+  _MIN_INSTANCES: "1"
+  _MAX_INSTANCES: "10"
+  _RUN_ARGS: "--allow-unauthenticated"
+  _VERIFY_METHOD: "health"
+  _TARGET_PROJECT: "sujho-478914"
+  _REGISTRY: "asia-south1-docker.pkg.dev/sujho-preprod/services"
+  _COMMIT_SHA: ""
+  _SHORT_SHA: ""
+  _REGION: "asia-south1"
+  _DC_CONNECTION: "sujho-github-dc-org"
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+steps:
+  # inline, self-contained: nothing from this repo exists in the workspace
+  # yet, so this can't call a script that lives inside it (circular)
+  - id: fetch-sujho
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        URI="$(gcloud developer-connect git-repository-links describe sujho-sujho \
+          --location="${_REGION}" --connection="${_DC_CONNECTION}" --project="${_TARGET_PROJECT}" \
+          --format='value(cloneUri)')"
+        [ -n "$URI" ] || { echo "refuse: sujho-sujho Developer Connect link not found"; exit 1; }
+        git init .
+        git remote add origin "$URI"
+        git fetch --depth=1 origin "${_COMMIT_SHA}"
+        git checkout --force "${_COMMIT_SHA}"
+
+  # resolve the digest behind sha-<commit>, never trust a moving tag
+  - id: resolve-digest
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        DIGEST="$(gcloud artifacts docker images describe \
+          "${_REGISTRY}/${_SERVICE_NAME}:sha-${_SHORT_SHA}" \
+          --format='value(image_summary.digest)')"
+        if [ -z "$DIGEST" ]; then
+          echo "Refuse: ${_REGISTRY}/${_SERVICE_NAME}:sha-${_SHORT_SHA} does not exist. Nothing was tested to promote."
+          exit 1
+        fi
+        echo "$DIGEST" > /workspace/.digest
+        echo "Deploying digest $DIGEST (sha-${_SHORT_SHA})"
+
+  - id: deploy-no-traffic
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        DIGEST="$(cat /workspace/.digest)"
+        gcloud run deploy "${_SERVICE_NAME}" \
+          --project="${_TARGET_PROJECT}" --region="${_REGION}" \
+          --image="${_REGISTRY}/${_SERVICE_NAME}@${DIGEST}" \
+          --no-traffic --tag="build-${_SHORT_SHA}" \
+          --cpu="${_CPU}" --memory="${_MEMORY}" --timeout="${_TIMEOUT}" \
+          --min-instances="${_MIN_INSTANCES}" --max-instances="${_MAX_INSTANCES}" \
+          --update-env-vars="RELEASE_COMMIT_SHA=${_COMMIT_SHA},RELEASE_IMAGE_DIGEST=${DIGEST}" \
+          ${_RUN_ARGS}
+    waitFor: ["resolve-digest"]
+
+  # polls up to 15x so a slow start doesn't fail the check
+  - id: verify
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        python3 ci/gates/verify_revision.py \
+          --service="${_SERVICE_NAME}" --project="${_TARGET_PROJECT}" \
+          --region="${_REGION}" --tag="build-${_SHORT_SHA}" \
+          --expect-sha="${_COMMIT_SHA}" --method="${_VERIFY_METHOD}" \
+          --attempts=15
+    waitFor: ["deploy-no-traffic"]
+
+  - id: shift-traffic
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        gcloud run services update-traffic "${_SERVICE_NAME}" \
+          --project="${_TARGET_PROJECT}" --region="${_REGION}" \
+          --to-latest
+        REVISION="$(gcloud run services describe "${_SERVICE_NAME}" \
+          --project="${_TARGET_PROJECT}" --region="${_REGION}" \
+          --format='value(status.traffic[0].revisionName)')"
+        gcloud run revisions update "$REVISION" \
+          --project="${_TARGET_PROJECT}" --region="${_REGION}" \
+          --update-labels=served=true
+        echo "traffic on $REVISION, served=true, live"
+    waitFor: ["verify"]
+
+timeout: 900s

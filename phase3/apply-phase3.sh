@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
-# Put Phase 3 files on `main` via a PR. Does not require the check until
-# `ai-review` has run once. Dry-run unless you pass --apply.
+# Put Phase 3 weekly jobs on sujho `main` via a PR. Not a merge gate — there
+# is no --require-checks. Dry-run unless you pass --apply.
+#
+# Mutation: umbrella tests/ci/pipeline.py mutation, self-hosted runner.
+# Eval: Eval-Suite/run.py on sujho. Cases stay in Eval-Suite; no transcripts.
 
 usage() {
   cat <<'EOF'
   ./apply-phase3.sh                  # validate + plan; no GitHub
-  ./apply-phase3.sh --apply          # open PRs into `main`
-  ./apply-phase3.sh --require-checks
-      # AFTER ai-review has run once, upsert the main ruleset that requires
-      # both pr-checks and ai-review. Refuses if ai-review has never appeared.
+  ./apply-phase3.sh --apply          # open a PR into sujho `main`
+
+There is no --require-checks. These jobs post to a tracking issue.
 EOF
 }
 
@@ -18,11 +20,10 @@ source "${PHASE3_DIR}/../phase1/lib.sh"
 # shellcheck source=lib.sh
 source "${PHASE3_DIR}/lib.sh"
 
-REQUIRE_CHECKS=0
 ARGS=()
 for arg in "$@"; do
   case "$arg" in
-    --require-checks) REQUIRE_CHECKS=1 ;;
+    --require-checks) die "Phase 3 is not a merge gate — no --require-checks" ;;
     --apply|-h|--help) ARGS+=("$arg") ;;
     *) die "unknown argument: $arg" ;;
   esac
@@ -34,22 +35,23 @@ fi
 
 python3 "${PHASE3_DIR}/validate.py" || die "Phase 3 local invariants failed"
 
-if [ "$APPLY" -eq 0 ] && [ "$REQUIRE_CHECKS" -eq 0 ]; then
+if [ "$APPLY" -eq 0 ]; then
   cat <<EOF
 DRY-RUN (pass --apply to mutate GitHub)
 
-PRs into \`main\` (AI comment on the same PR the Lead Approves):
-  ${PHASE3_REPOS[*]}
-    ${PHASE3_WORKFLOW_DEST}
-    ${PHASE3_SCRIPT_DEST}
-    ${PHASE3_REVIEW_DEST}
+Mutation + eval PR into \`main\` (${PHASE3_MUTATION_REPOS[*]}):
+  ${PHASE3_MUTATION_WORKFLOW}
+    python tests/ci/pipeline.py mutation  (self-hosted runner labeled mutation)
+  ${PHASE3_MUTATION_SCRIPT}
+  ${PHASE3_EVAL_WORKFLOW}
+    python Eval-Suite/run.py  (spend-capped, fake eval users)
+  ${PHASE3_EVAL_SCRIPT}
+  needs MUTATION_TRACKING_ISSUE, EVAL_TRACKING_ISSUE, GCP_WIF_SERVICE_ACCOUNT_EVAL, eval-* secrets
+  This job reports only. It does not stamp preprod-approved.
+  A Lead stamps one image via approve-preprod after testing on Pre-Prod.
 
-Needs repo vars GCP_WIF_PROVIDER and GCP_WIF_SERVICE_ACCOUNT_AI_REVIEW, and GCP secret
-ai-review-anthropic-key. Missing auth fails open — it must not block merge.
-The collect job never receives WIF or the API key. Lead Approve is still required.
-
-Do not pass --require-checks until \`ai-review\` has shown up on a PR.
-Then: ./apply-phase3.sh --require-checks --apply
+skip: ${PHASE3_SKIP_REPOS[*]}
+  (mutation/eval need the umbrella tree, not a service checkout)
 EOF
   exit 0
 fi
@@ -71,14 +73,14 @@ ensure_branch_from() {
   local repo="$1" branch="$2" from="$3"
   local sha
   sha="$(ref_sha "$repo" "$from")"
-  [ -n "$sha" ] || die "${repo}: no ${from} (Phase 1 branches first)"
+  [ -n "$sha" ] || die "${repo}: no ${from}"
   if [ -z "$(ref_sha "$repo" "$branch")" ]; then
     gh api "repos/${ORG}/${repo}/git/refs" -f ref="refs/heads/${branch}" -f sha="$sha" >/dev/null
   fi
 }
 
 open_dev_pr() {
-  local repo="$1"
+  local repo="$1" title="$2" body="$3"
   local n
   n="$(gh pr list --repo "${ORG}/${repo}" --base main --head "$PHASE3_BRANCH" --json number --jq '.[0].number' || true)"
   if [ -n "$n" ]; then
@@ -86,57 +88,25 @@ open_dev_pr() {
     return 0
   fi
   gh pr create --repo "${ORG}/${repo}" --base main --head "$PHASE3_BRANCH" \
-    --title "Phase 3: AI review gate" \
-    --body "Two-pass review on PRs into \`main\`. Fail-open on billing/auth. Merge does not deploy. Do not require \`ai-review\` until it has run once. Secrets stay in GCP (WIF + Secret Manager), never GitHub Secrets."
+    --title "$title" --body "$body"
 }
-
-check_has_run() {
-  local repo="$1" name="$2"
-  gh api "repos/${ORG}/${repo}/commits/main/check-runs" --jq '.check_runs[].name' 2>/dev/null \
-    | grep -qx "$name"
-}
-
-if [ "$REQUIRE_CHECKS" -eq 1 ]; then
-  if [ "$APPLY" -eq 0 ]; then
-    echo "DRY-RUN --require-checks: sujho/admin get pr-checks+ai-review; other repos get ai-review only. Refuses if ${PHASE3_REQUIRED_CHECK} has never run."
-    exit 0
-  fi
-  refused=0
-  with_pr_checks=" ${PHASE3_WITH_PR_CHECKS[*]} "
-  for REPO in "${PHASE3_REPOS[@]}"; do
-    if ! check_has_run "$REPO" "$PHASE3_REQUIRED_CHECK"; then
-      echo "${REPO}: REFUSING — '${PHASE3_REQUIRED_CHECK}' has never run on main"
-      refused=1
-      continue
-    fi
-    if [ "$(repo_admin "$REPO")" != "true" ]; then
-      echo "${REPO}: admin=false — skip ruleset"
-      continue
-    fi
-    if echo "$with_pr_checks" | grep -q " ${REPO} "; then
-      upsert_ruleset "$REPO" "${PHASE3_DIR}/rulesets/main-required-checks.json"
-    else
-      upsert_ruleset "$REPO" "${PHASE3_DIR}/rulesets/main-required-ai-only.json"
-    fi
-  done
-  [ "$refused" -eq 0 ] || die "one or more repos are not ready for required checks"
-  exit 0
-fi
 
 login="$(gh api user --jq .login)"
-echo "actor=${login} apply=1 (AI review PRs into main)"
+echo "actor=${login} apply=1 (Phase 3 weekly jobs into sujho/main)"
 
-for REPO in "${PHASE3_REPOS[@]}"; do
-  echo "==== ${REPO} ===="
-  [ -n "$(ref_sha "$REPO" main)" ] || die "${REPO}: no main branch"
-  ensure_branch_from "$REPO" "$PHASE3_BRANCH" main
-  put_file "$REPO" "$PHASE3_WORKFLOW_DEST" "${PHASE3_DIR}/workflows/ai-review.yml" \
-    "$PHASE3_BRANCH" "Add Phase 3 AI review workflow."
-  put_file "$REPO" "$PHASE3_SCRIPT_DEST" "${PHASE3_DIR}/scripts/ai_review.py" \
-    "$PHASE3_BRANCH" "Add Phase 3 two-pass review script."
-  put_file "$REPO" "$PHASE3_REVIEW_DEST" "${PHASE3_DIR}/REVIEW.md" \
-    "$PHASE3_BRANCH" "Add Phase 3 review rubric."
-  open_dev_pr "$REPO"
-done
+REPO="${PHASE3_MUTATION_REPOS[0]}"
+echo "==== ${REPO} mutation + eval ===="
+ensure_branch_from "$REPO" "$PHASE3_BRANCH" main
+put_file "$REPO" "$PHASE3_MUTATION_WORKFLOW" "${PHASE3_DIR}/workflows/mutation.yml" \
+  "$PHASE3_BRANCH" "Phase 3: weekly mutation job (not a merge gate)."
+put_file "$REPO" "$PHASE3_MUTATION_SCRIPT" "${PHASE3_DIR}/scripts/mutation_report.py" \
+  "$PHASE3_BRANCH" "Phase 3: mutation reporter — drops flag an issue, never fail CI."
+put_file "$REPO" "$PHASE3_EVAL_WORKFLOW" "${PHASE3_DIR}/workflows/eval-replay.yml" \
+  "$PHASE3_BRANCH" "Phase 3: weekly Eval-Suite replay (spend-capped, not a merge gate)."
+put_file "$REPO" "$PHASE3_EVAL_SCRIPT" "${PHASE3_DIR}/scripts/eval_replay.py" \
+  "$PHASE3_BRANCH" "Phase 3: eval replay wrapper around Eval-Suite/run.py."
+open_dev_pr "$REPO" \
+  "Phase 3: weekly mutation + Eval-Suite" \
+  "Mutation via \`tests/ci/pipeline.py mutation\` (self-hosted). Eval via \`Eval-Suite/run.py\` (fake eval users, spend cap ₹4500). Reports only — never gates a deploy. Not a required check. Do not check in transcripts."
 
-echo "Next: merge PRs, run a non-trivial PR so ai-review appears, then --require-checks"
+echo "skip: ${PHASE3_SKIP_REPOS[*]}"

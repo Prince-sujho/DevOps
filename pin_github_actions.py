@@ -2,7 +2,7 @@
 """Rewrite GitHub Actions `uses:` lines to full SHAs from action-pins.json.
 
 Tags like @v4 move. Pins do not. Re-run after changing action-pins.json.
-Skips Cloud Build YAML under phase4/ci/.
+Skips Cloud Build YAML under phase2/ci/.
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ USES_RE = re.compile(
     r"(?P<comment>[^\n]*)"
 )
 
-SKIP_DIRS = {ROOT / "phase4" / "ci"}
+SKIP_DIRS = {ROOT / "phase2" / "ci"}
 
 
 def pin_comment(name: str) -> str:

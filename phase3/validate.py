@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local invariants for Phase 3 — no GitHub and no Anthropic calls."""
+"""Local invariants for Phase 3 — no GitHub, GCP, OpenAI, or mutmut."""
 from __future__ import annotations
 
 import json
@@ -12,215 +12,253 @@ from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE / "scripts"))
-import ai_review  # noqa: E402
+import eval_replay as ev  # noqa: E402
+import mutation_report as mut  # noqa: E402
 
-WORKFLOW = (HERE / "workflows" / "ai-review.yml").read_text()
+MUT_WF = (HERE / "workflows" / "mutation.yml").read_text()
+EVAL_WF = (HERE / "workflows" / "eval-replay.yml").read_text()
 PINS = json.loads((HERE.parent / "action-pins.json").read_text())["pins"]
-REVIEW_MD = (HERE / "REVIEW.md").read_text()
-RULESET = json.loads((HERE / "rulesets" / "main-required-checks.json").read_text())
-AI_ONLY = json.loads((HERE / "rulesets" / "main-required-ai-only.json").read_text())
+APPLY = (HERE / "apply-phase3.sh").read_text()
 LIB = (HERE / "lib.sh").read_text()
-PHASE2_RULESET = json.loads(
-    (HERE.parent / "phase2" / "rulesets" / "main-required-checks.json").read_text()
-)
 
 
-class WorkflowTests(unittest.TestCase):
-    def test_targets_main_not_extra_github_branches(self) -> None:
-        self.assertIn("branches: [main]", WORKFLOW)
-        self.assertNotIn("branches: [dev]", WORKFLOW)
-        self.assertNotIn("branches: [pre-prod]", WORKFLOW)
+class MutationWorkflowTests(unittest.TestCase):
+    def test_self_hosted_not_github_hosted(self) -> None:
+        self.assertIn("runs-on: [self-hosted, mutation]", MUT_WF)
+        self.assertNotIn("runs-on: ubuntu-latest", MUT_WF)
 
-    def test_skips_trivial_and_draft_prs(self) -> None:
-        self.assertIn("skip=true", WORKFLOW)
-        self.assertIn("draft == false", WORKFLOW)
+    def test_weekly_not_on_pull_request(self) -> None:
+        self.assertIn("cron:", MUT_WF)
+        self.assertIn("workflow_dispatch", MUT_WF)
+        self.assertNotIn("pull_request", MUT_WF)
 
-    def test_gate_job_is_named_ai_review(self) -> None:
-        self.assertIn("name: ai-review", WORKFLOW)
-        self.assertIn("if: always()", WORKFLOW)
+    def test_not_a_merge_gate(self) -> None:
+        self.assertIn("timeout-minutes: 720", MUT_WF)
+        self.assertIn("continue-on-error: true", MUT_WF)
+        self.assertIn("tests/ci/pipeline.py mutation", MUT_WF)
 
-    def test_fail_open_does_not_fail_the_gate(self) -> None:
-        self.assertIn('data.get("fail_open")', WORKFLOW)
-        self.assertIn("continue-on-error: true", WORKFLOW)
+    def test_posts_to_an_issue_not_a_pr_check(self) -> None:
+        self.assertIn("issues: write", MUT_WF)
+        self.assertIn("MUTATION_TRACKING_ISSUE", MUT_WF)
 
-    def test_no_github_secrets_for_the_api_key(self) -> None:
-        self.assertNotIn("secrets.", WORKFLOW)
-        self.assertIn("ai-review-anthropic-key", WORKFLOW)
+    def test_checks_out_submodules(self) -> None:
+        self.assertIn("submodules: recursive", MUT_WF)
+
+
+class EvalWorkflowTests(unittest.TestCase):
+    def test_weekly_not_a_merge_gate(self) -> None:
+        self.assertIn("cron:", EVAL_WF)
+        self.assertNotIn("pull_request", EVAL_WF)
+
+    def test_no_stale_spend_cap(self) -> None:
+        self.assertNotIn("SPEND_CAP_INR", EVAL_WF)
+        self.assertNotIn("SPEND_SO_FAR_INR", EVAL_WF)
+
+    def test_no_github_secrets(self) -> None:
+        self.assertNotIn("secrets.", EVAL_WF)
         self.assertIn(
             f"google-github-actions/auth@{PINS['google-github-actions/auth']['sha']}",
-            WORKFLOW,
+            EVAL_WF,
         )
-        self.assertNotIn("google-github-actions/auth@v2\n", WORKFLOW)
-        self.assertIn("GCP_WIF_SERVICE_ACCOUNT_AI_REVIEW", WORKFLOW)
+        self.assertNotIn("google-github-actions/auth@v2\n", EVAL_WF)
+        self.assertIn(f"actions/checkout@{PINS['actions/checkout']['sha']}", MUT_WF)
+        self.assertIn(f"actions/checkout@{PINS['actions/checkout']['sha']}", EVAL_WF)
+        self.assertIn("continue-on-error: true", EVAL_WF)
+        self.assertIn("::add-mask::", EVAL_WF)
+        self.assertIn("GCP_WIF_SERVICE_ACCOUNT_EVAL", EVAL_WF)
 
-    def test_does_not_use_break_system_packages(self) -> None:
-        self.assertNotIn("--break-system-packages", WORKFLOW)
+    def test_eval_history_is_restored_and_uploaded(self) -> None:
+        self.assertIn("eval-history.json", EVAL_WF)
+        self.assertIn("gh run download", EVAL_WF)
+        self.assertIn("Restore eval-history", EVAL_WF)
 
-    def test_bandit_skips_when_there_are_no_python_files(self) -> None:
-        self.assertIn("changed_py=", WORKFLOW)
-        self.assertIn('echo \'{"results":[]}\' > bandit-results.json', WORKFLOW)
+    def test_eval_never_touches_the_approval_mechanism(self) -> None:
+        self.assertNotIn("tag-on-approval.sh", EVAL_WF)
+        self.assertNotIn("tag-preprod-approved", EVAL_WF)
+        self.assertNotIn("preprod-approved", EVAL_WF)
+        self.assertNotIn("approve-preprod", EVAL_WF)
+        self.assertNotIn("GCP_WIF_SERVICE_ACCOUNT_PREPROD", EVAL_WF)
 
-    def test_comment_is_updated_not_spammed(self) -> None:
-        self.assertIn("phase3-ai-review", WORKFLOW)
-        self.assertIn("updateComment", WORKFLOW)
+    def test_points_at_eval_suite_not_anthropic(self) -> None:
+        self.assertIn("Eval-Suite/run.py", EVAL_WF + Path(HERE / "scripts" / "eval_replay.py").read_text())
+        self.assertIn("eval-openai-key", EVAL_WF)
+        self.assertNotIn("ANTHROPIC_API_KEY", EVAL_WF)
+        self.assertIn("submodules: recursive", EVAL_WF)
 
-    def test_collect_has_no_credentials_or_review_script(self) -> None:
-        collect = WORKFLOW.split("\n  collect:")[1].split("\n  review:")[0]
-        review = WORKFLOW.split("\n  review:")[1].split("\n  ai-review:")[0]
-        self.assertNotIn("google-github-actions/auth", collect)
-        self.assertNotIn("ANTHROPIC_API_KEY", collect)
-        self.assertNotIn("id-token: write", collect)
-        self.assertNotIn("scripts/ai_review.py", collect)
-        self.assertIn("persist-credentials: false", collect)
-        self.assertIn("refs/pull/", collect)
-        self.assertIn("google-github-actions/auth", review)
-        self.assertIn("scripts/ai_review.py", review)
-        self.assertIn("id-token: write", review)
-        self.assertIn("pull_request.base.sha", review)
-        self.assertNotIn("head.sha", review)
-        self.assertNotIn("refs/pull/", review)
-
-    def test_api_key_is_masked_before_github_env(self) -> None:
-        fetch = WORKFLOW.split("Fetch Anthropic API key from Secret Manager")[1]
-        mask_at = fetch.find("::add-mask::")
-        env_at = fetch.find("GITHUB_ENV")
-        self.assertNotEqual(mask_at, -1)
-        self.assertNotEqual(env_at, -1)
-        self.assertLess(mask_at, env_at)
-
-    def test_does_not_fall_back_to_dev_branch(self) -> None:
-        self.assertNotIn("'dev'", WORKFLOW)
-        self.assertIn("github.event.repository.default_branch", WORKFLOW)
-
-    def test_semgrep_is_scoped_to_the_diff(self) -> None:
-        self.assertIn("--baseline-commit", WORKFLOW)
-
-    def test_collect_failure_is_fail_open(self) -> None:
-        gate = WORKFLOW.split("\n  ai-review:")[1]
-        self.assertIn("collect failed — fail-open", gate)
-        self.assertIn('collect" = "failure"', gate)
-        self.assertIn("exit 0", gate)
-        self.assertNotIn("git fetch --depth=50", WORKFLOW)
+    def test_fail_open_auth(self) -> None:
+        self.assertIn("continue-on-error: true", EVAL_WF)
 
 
-class RubricTests(unittest.TestCase):
-    def test_blocks_on_important_not_nits(self) -> None:
-        self.assertIn("Always escalate to Important", REVIEW_MD)
-        self.assertIn("Nit only, never blocks merge", REVIEW_MD)
+class MutationScriptTests(unittest.TestCase):
+    def test_placeholder_paths_file_is_gone(self) -> None:
+        self.assertFalse((HERE / "mutation-paths.txt").exists())
 
-    def test_prompt_says_users_not_students_and_teachers_as_the_label(self) -> None:
-        self.assertIn('Call them "users" only', ai_review.PASS1_SYSTEM)
-        self.assertIn("never \"students and teachers\" in findings", ai_review.PASS1_SYSTEM)
+    def test_missing_report_skips_and_exits_zero(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path.cwd()
+            os.chdir(tmp)
+            try:
+                self.assertEqual(mut.main(["--report", "missing.json"]), 0)
+                data = json.loads(Path("mutation-result.json").read_text())
+                self.assertTrue(data["skipped"])
+                self.assertTrue(data["flag_review"])
+            finally:
+                os.chdir(cwd)
+
+    def test_score_drop_flags_but_exits_zero(self) -> None:
+        self.assertTrue(mut.should_flag(0.95))
+        self.assertFalse(mut.should_flag(0.98))
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path.cwd()
+            os.chdir(tmp)
+            try:
+                Path("mutmut-cicd-stats.json").write_text(
+                    json.dumps({"killed": 95, "survived": 5, "total": 100})
+                )
+                self.assertEqual(mut.main(["--report", "mutmut-cicd-stats.json"]), 0)
+                data = json.loads(Path("mutation-result.json").read_text())
+                self.assertTrue(data["flag_review"])
+                self.assertFalse(data["skipped"])
+                self.assertEqual(data["score"], 0.95)
+            finally:
+                os.chdir(cwd)
+
+    def test_corrupt_report_still_exits_zero(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path.cwd()
+            os.chdir(tmp)
+            try:
+                Path("mutmut-cicd-stats.json").write_text("{not json")
+                self.assertEqual(mut.main(["--report", "mutmut-cicd-stats.json"]), 0)
+                self.assertTrue(json.loads(Path("mutation-result.json").read_text())["skipped"])
+            finally:
+                os.chdir(cwd)
 
 
-class ScriptTests(unittest.TestCase):
-    def test_parse_json_inside_fences(self) -> None:
-        text = '```json\n{"review_findings": []}\n```'
-        self.assertEqual(ai_review.parse_model_json(text)["review_findings"], [])
+class EvalScriptTests(unittest.TestCase):
+    def test_placeholder_golden_set_is_gone(self) -> None:
+        self.assertFalse((HERE / "eval" / "golden-set.json").exists())
+        self.assertFalse((HERE / "eval" / "golden-set.schema.json").exists())
+        self.assertFalse((HERE / "eval" / "scenarios.md").exists())
 
-    def test_nits_are_capped_and_do_not_become_important(self) -> None:
-        findings = [{"severity": "nit", "file": f"f{i}", "issue": str(i)} for i in range(9)]
-        findings.append({"severity": "important", "file": "a.py", "issue": "x"})
-        out = ai_review.cap_nits(findings)
-        self.assertEqual(sum(1 for f in out if f["severity"] == "nit"), 5)
-        self.assertEqual(sum(1 for f in out if f["severity"] == "important"), 1)
+    def test_escalate_only_after_two_weak_weeks(self) -> None:
+        this = {"a": "fail", "b": "pass", "c": "xpass"}
+        hist = {"last_week": {"a": "fail", "b": "fail", "c": "pass"}}
+        esc = ev.persist_and_escalate(this, hist)
+        self.assertEqual(esc, ["a"])
+        self.assertEqual(hist["last_week"]["b"], "pass")
 
-    def test_pass2_does_not_repeat_pass1(self) -> None:
-        pass1 = {
-            "review_findings": [{"severity": "important", "file": "a.py", "issue": "dup"}],
-            "static_triage": [],
-        }
-        pass2 = {
-            "missed_findings": [
-                {"severity": "important", "file": "a.py", "issue": "dup"},
-                {"severity": "important", "file": "b.py", "issue": "new"},
-            ]
-        }
-        merged = ai_review.merge_passes(pass1, pass2)
-        issues = [f["issue"] for f in merged]
-        self.assertEqual(issues.count("dup"), 1)
-        self.assertIn("new", issues)
+    def test_no_spend_cap_function_left(self) -> None:
+        self.assertFalse(hasattr(ev, "spend_cap_hit"))
 
-    def test_confirmed_static_finding_is_important(self) -> None:
-        pass1 = {
-            "review_findings": [],
-            "static_triage": [
-                {"verdict": "true_positive", "tool": "bandit", "rule_id": "B101", "reasoning": "assert"}
+    def test_missing_key_fails_open(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path.cwd()
+            os.chdir(tmp)
+            try:
+                with mock.patch.dict(os.environ, {}, clear=True):
+                    self.assertEqual(ev.main(), 0)
+                data = json.loads(Path("eval-result.json").read_text())
+                self.assertTrue(data["fail_open"])
+                self.assertIn("OPENAI_API_KEY", data["reason"])
+            finally:
+                os.chdir(cwd)
+
+    def test_missing_runner_skips(self) -> None:
+        env = {name: "x" for name in ev.REQUIRED_ENV}
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path.cwd()
+            os.chdir(tmp)
+            try:
+                with mock.patch.dict(os.environ, env, clear=True):
+                    self.assertEqual(ev.main(), 0)
+                data = json.loads(Path("eval-result.json").read_text())
+                self.assertTrue(data["skipped"])
+                self.assertIn("Eval-Suite/run.py", data["reason"])
+            finally:
+                os.chdir(cwd)
+
+    def test_suite_results_are_recorded_and_job_stays_green(self) -> None:
+        env = {name: "x" for name in ev.REQUIRED_ENV}
+        report = {
+            "run_id": "20260915-000000",
+            "counts": {"pass": 58, "fail": 2, "xfail": 0, "xpass": 0},
+            "results": [
+                {"case_id": "s1", "status": "pass"},
+                {"case_id": "s2", "status": "fail"},
+                {"case_id": "s3", "status": "fail"},
             ],
         }
-        out = ai_review.merge_passes(pass1, {})
-        self.assertEqual(out[0]["severity"], "important")
-
-    def test_spend_cap_writes_fail_open_without_calling_claude(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path.cwd()
             os.chdir(tmp)
             try:
-                with mock.patch.dict(os.environ, {"SPEND_CAP_INR": "4500", "SPEND_SO_FAR_INR": "4500"}):
-                    with mock.patch.object(ai_review, "call_claude") as mocked:
-                        self.assertEqual(ai_review.main(), 0)
-                        mocked.assert_not_called()
-                data = json.loads(Path("review-result.json").read_text())
-                self.assertTrue(data["fail_open"])
-                self.assertEqual(data["findings"], [])
-            finally:
-                os.chdir(cwd)
-
-    def test_missing_api_key_fails_open(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            cwd = Path.cwd()
-            os.chdir(tmp)
-            try:
-                env = {"SPEND_CAP_INR": "4500"}
+                Path("Eval-Suite/reports").mkdir(parents=True)
+                Path("Eval-Suite/run.py").write_text("print('ok')\n")
+                Path("Eval-Suite/reports/20260915-000000.json").write_text(json.dumps(report))
+                Path("eval-history.json").write_text(
+                    json.dumps({"last_week": {"s2": "fail", "s3": "pass"}})
+                )
                 with mock.patch.dict(os.environ, env, clear=True):
-                    self.assertEqual(ai_review.main(), 0)
-                data = json.loads(Path("review-result.json").read_text())
-                self.assertTrue(data["fail_open"])
+                    with mock.patch.object(ev, "run_suite", return_value=1):
+                        self.assertEqual(ev.main(), 0)
+                data = json.loads(Path("eval-result.json").read_text())
+                self.assertFalse(data["skipped"])
+                self.assertTrue(data["flag_review"])
+                self.assertFalse(data["full_pass"])
+                self.assertEqual(data["escalate"], ["s2"])
             finally:
                 os.chdir(cwd)
 
-    def test_claude_exception_fails_open_not_closed(self) -> None:
+    def test_clean_eval_is_a_full_pass_and_writes_history(self) -> None:
+        env = {name: "x" for name in ev.REQUIRED_ENV}
+        report = {
+            "run_id": "20260921-000000",
+            "counts": {"pass": 3, "fail": 0, "xfail": 0, "xpass": 0},
+            "results": [
+                {"case_id": "s1", "status": "pass"},
+                {"case_id": "s2", "status": "pass"},
+            ],
+        }
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path.cwd()
             os.chdir(tmp)
             try:
-                Path("pr.diff").write_text("diff")
-                with mock.patch.dict(os.environ, {"ANTHROPIC_API_KEY": "x"}):
-                    with mock.patch.object(ai_review, "call_claude", side_effect=RuntimeError("billing")):
-                        self.assertEqual(ai_review.main(), 0)
-                data = json.loads(Path("review-result.json").read_text())
-                self.assertTrue(data["fail_open"])
-                self.assertEqual(data["findings"], [])
+                Path("Eval-Suite/reports").mkdir(parents=True)
+                Path("Eval-Suite/run.py").write_text("print('ok')\n")
+                Path("Eval-Suite/reports/20260921-000000.json").write_text(json.dumps(report))
+                Path("eval-history.json").write_text(json.dumps({"last_week": {"s1": "pass"}}))
+                with mock.patch.dict(os.environ, env, clear=True):
+                    with mock.patch.object(ev, "run_suite", return_value=0):
+                        self.assertEqual(ev.main(), 0)
+                data = json.loads(Path("eval-result.json").read_text())
+                self.assertTrue(data["full_pass"])
+                self.assertFalse(data["flag_review"])
+                hist = json.loads(Path("eval-history.json").read_text())
+                self.assertEqual(hist["last_week"]["s1"], "pass")
+                self.assertEqual(hist["last_week"]["s2"], "pass")
             finally:
                 os.chdir(cwd)
 
 
-def _contexts(ruleset: dict) -> list[str]:
-    for rule in ruleset["rules"]:
-        if rule.get("type") == "required_status_checks":
-            return [c["context"] for c in rule["parameters"]["required_status_checks"]]
-    raise AssertionError("no required_status_checks")
+class ApplyTests(unittest.TestCase):
+    def test_umbrella_only_not_service_repos(self) -> None:
+        self.assertIn("PHASE3_MUTATION_REPOS=(sujho)", LIB)
+        self.assertIn("PHASE3_EVAL_REPOS=(sujho)", LIB)
+        skip = LIB.split("PHASE3_SKIP_REPOS")[1].split(")")[0]
+        self.assertIn("admin", skip)
+        self.assertIn("text-agent", skip)
+        self.assertNotIn("mutation-paths.txt", APPLY)
+        self.assertNotIn("golden-set.json", APPLY)
+        self.assertNotIn("tag-on-approval.sh", APPLY)
+        self.assertNotIn("PHASE3_TAG_SCRIPT", LIB)
+        self.assertNotIn("preprod-approved is stamped", APPLY)
 
+    def test_apply_refuses_required_checks(self) -> None:
+        self.assertIn('die "Phase 3 is not a merge gate', APPLY)
 
-class RepoListTests(unittest.TestCase):
-    def test_ai_runs_on_sujho_and_every_full_treatment_repo(self) -> None:
-        self.assertIn("sujho", LIB)
-        self.assertIn("sujho-ops-mcp", LIB)
-        self.assertNotIn("PHASE3_SKIP_REPOS", LIB)
-
-
-class RulesetTests(unittest.TestCase):
-    def test_requires_ai_review_and_keeps_pr_checks(self) -> None:
-        self.assertEqual(_contexts(RULESET), ["pr-checks", "ai-review"])
-
-    def test_service_repos_require_ai_only_not_pr_checks(self) -> None:
-        self.assertEqual(_contexts(AI_ONLY), ["ai-review"])
-
-    def test_keeps_code_owners_on_main(self) -> None:
-        pr = next(r["parameters"] for r in RULESET["rules"] if r["type"] == "pull_request")
-        self.assertTrue(pr["require_code_owner_review"])
-        p2 = next(r["parameters"] for r in PHASE2_RULESET["rules"] if r["type"] == "pull_request")
-        self.assertTrue(p2["require_code_owner_review"])
+    def test_no_phase3_rulesets(self) -> None:
+        self.assertFalse((HERE / "rulesets").exists())
 
 
 if __name__ == "__main__":
