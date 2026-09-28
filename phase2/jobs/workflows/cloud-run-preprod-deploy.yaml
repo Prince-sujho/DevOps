@@ -96,27 +96,29 @@ jobs:
           SHORT="$(printf '%s' "$SHA" | cut -c1-7)"
           eval "$(python3 jobs/scripts/lookup_job.py --id "$JOB_ID")"
 
+          # one quoted string: values with spaces (_GITLINKS, _RUN_ARGS) stay one substitution
+          SUBS="_JOB_ID=$JOB_ID"
+          SUBS+=",_DOCKERFILE=$DOCKERFILE"
+          SUBS+=",_IMAGE=$IMAGE"
+          SUBS+=",_GITLINKS=$GITLINKS"
+          SUBS+=",_RUNTIME_SA=$RUNTIME_SA"
+          SUBS+=",_CPU=$CPU"
+          SUBS+=",_MEMORY=$MEMORY"
+          SUBS+=",_TASK_TIMEOUT=$TASK_TIMEOUT"
+          SUBS+=",_TASKS=$TASKS"
+          SUBS+=",_PARALLELISM=$PARALLELISM"
+          SUBS+=",_MAX_RETRIES=$MAX_RETRIES"
+          SUBS+=",_ENTRY_FILE=$ENTRY_FILE"
+          SUBS+=",_ENTRY_MODULE=$ENTRY_MODULE"
+          SUBS+=",_SCHEDULE=$SCHEDULE"
+          SUBS+=",_COMMIT_SHA=$SHA"
+          SUBS+=",_SHORT_SHA=$SHORT"
+
           gcloud builds submit --no-source \
             --project=sujho-preprod \
             --region=asia-south1 \
             --config=ci/job-build-deploy.yaml \
-            --substitutions=\
-_JOB_ID="$JOB_ID",\
-_DOCKERFILE="$DOCKERFILE",\
-_IMAGE="$IMAGE",\
-_GITLINKS="$GITLINKS",\
-_RUNTIME_SA="$RUNTIME_SA",\
-_CPU="$CPU",\
-_MEMORY="$MEMORY",\
-_TASK_TIMEOUT="$TASK_TIMEOUT",\
-_TASKS="$TASKS",\
-_PARALLELISM="$PARALLELISM",\
-_MAX_RETRIES="$MAX_RETRIES",\
-_ENTRY_FILE="$ENTRY_FILE",\
-_ENTRY_MODULE="$ENTRY_MODULE",\
-_SCHEDULE="$SCHEDULE",\
-_COMMIT_SHA="$SHA",\
-_SHORT_SHA="$SHORT"
+            --substitutions="$SUBS"
 
       - name: Execute job once
         if: ${{ inputs.execute }}
@@ -134,7 +136,7 @@ _SHORT_SHA="$SHORT"
             fi
             gcloud run jobs execute "$JOB_ID" \
               --project="$PROJECT" --region=asia-south1 \
-              --update-args="$ENTRY_ID" --wait
+              --args="-m,$ENTRY_MODULE,$ENTRY_ID" --wait
           else
             gcloud run jobs execute "$JOB_ID" \
               --project="$PROJECT" --region=asia-south1 --wait

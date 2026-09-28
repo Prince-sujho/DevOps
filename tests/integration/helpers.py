@@ -104,15 +104,9 @@ def assistant_message(
 def append_body(
     messages: list[dict[str, Any]],
     *,
-    read_ids: Optional[list[str]] = None,
-    previous_response_id: Optional[str] = None,
     started_at_ms: Optional[int] = None,
 ) -> dict[str, Any]:
-    return {
-        "messages": messages,
-        "readIds": read_ids if read_ids is not None else [],
-        "startedAtMs": started_at_ms,
-    }
+    return {"messages": messages, "startedAtMs": started_at_ms}
 
 
 def amazon_product_body() -> dict[str, Any]:
@@ -211,19 +205,12 @@ class UsersApi:
         user_id: str,
         messages: list[dict[str, Any]],
         *,
-        read_ids: Optional[list[str]] = None,
-        previous_response_id: Optional[str] = None,
         started_at_ms: Optional[int] = None,
         thread_key: str = K.WHATSAPP_THREAD_KEY,
     ) -> httpx.Response:
         return await self.post(
             f"/internal/users/{user_id}/threads/{thread_key}/transcript",
-            json=append_body(
-                messages,
-                read_ids=read_ids,
-                previous_response_id=previous_response_id,
-                started_at_ms=started_at_ms,
-            ),
+            json=append_body(messages, started_at_ms=started_at_ms),
         )
 
 

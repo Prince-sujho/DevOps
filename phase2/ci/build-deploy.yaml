@@ -70,12 +70,39 @@ steps:
           echo "no prior revision for ${_SERVICE_NAME}, first deploy"
           BASE_SHA="${_COMMIT_SHA}"
         fi
+        # Decision 14: semgrep and mypy compare against the deployed commit.
+        # fetch-sujho fetched only the deploy SHA at depth 1; semgrep's baseline
+        # runs `git diff --merge-base`, which needs the history joining the two.
+        # Full history of this small repo, fetched here where the Developer
+        # Connect credentials are. If the baseline isn't there, fail the build.
+        if [ "$BASE_SHA" != "${_COMMIT_SHA}" ]; then
+          git fetch --unshallow origin
+        fi
+        git cat-file -e "$BASE_SHA^{commit}"
         echo "$BASE_SHA" > /workspace/.baseline_sha
         echo "baseline commit: $BASE_SHA"
+        # The mypy ratchet must count the same trees on both sides: the baseline
+        # commit with its own pinned service + infra checkouts, just as HEAD has
+        # them. Built on a volume, not in /workspace, so ruff/mypy/semgrep on
+        # HEAD never scan it. A gitlink the baseline predates is skipped.
+        git worktree add --detach /baseline "$BASE_SHA"
+        BASE_PATHS=""
+        for p in $_GITLINKS; do
+          if git -C /baseline ls-tree HEAD -- "$p" | grep -q '^160000'; then
+            BASE_PATHS="$BASE_PATHS $p"
+          fi
+        done
+        if [ -n "$BASE_PATHS" ]; then
+          python3 ci/checkout-gitlinks.py --root=/baseline --paths $BASE_PATHS \
+            --project="${_TARGET_PROJECT}" --region="${_REGION}" --connection="${_DC_CONNECTION}"
+        fi
+    volumes:
+      - name: baseline
+        path: /baseline
     waitFor: ["fetch-sujho"]
 
-  # gate 1: static — ruff, mypy ratchet, semgrep, secrets. Needs git for the
-  # mypy worktree diff and semgrep's --baseline-commit; python:3.12-slim has none.
+  # gate 1: static — ruff, mypy ratchet, semgrep, secrets. Needs git for
+  # semgrep's --baseline-commit and detect-secrets' file list; python:3.12-slim has none.
   - id: gate-1-static
     name: python:3.12-slim
     entrypoint: bash
@@ -86,12 +113,49 @@ steps:
         apt-get update -qq && apt-get install -y -qq git >/dev/null
         pip install --quiet ruff mypy semgrep detect-secrets
         ruff check .
-        python3 ci/gates/mypy_ratchet.py --baseline-sha "$(cat /workspace/.baseline_sha)"
+        python3 ci/gates/mypy_ratchet.py --baseline-sha "$(cat /workspace/.baseline_sha)" --baseline-root /baseline
         semgrep scan --config=auto --error --baseline-commit "$(cat /workspace/.baseline_sha)"
         detect-secrets-hook --baseline tests/ci/.secrets.baseline $(git ls-files)
+    volumes:
+      - name: baseline
+        path: /baseline
     waitFor: ["fetch-gitlinks", "resolve-baseline"]
 
-  # gate 2: the ~65 kept tests, against a Firestore emulator
+  # gate 2 imports every service (the cross-service contract is the point,
+  # decision 12), but fetch-gitlinks only fetched the one being deployed.
+  # Fetch the rest here, derived from services.json + the jobs catalog so a new
+  # service is picked up with no edit. After gate-1, so static checks still
+  # see only the service being deployed. The image build copies only its own
+  # Dockerfile paths, so these extra checkouts never reach the image.
+  - id: fetch-test-gitlinks
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        TEST_GITLINKS="$(python3 -c 'import json; s = json.load(open("ci/services.json")); j = json.load(open("jobs/catalog.jobs.json")); print(" ".join(sorted({g for c in s.values() for g in c["gitlinks"]} | {g for c in j["image_groups"].values() for g in c["gitlinks"]})))')"
+        python3 ci/checkout-gitlinks.py --root=. --paths $TEST_GITLINKS \
+          --project="${_TARGET_PROJECT}" --region="${_REGION}" --connection="${_DC_CONNECTION}"
+    waitFor: ["gate-1-static"]
+
+  # gate 2: the 65 kept tests, plus knowledge_store's 9 pure-logic additions,
+  # against a Firestore emulator. tests/knowledge_store's other 10 tests (real
+  # Neo4j via Docker) are verified locally -- 10/10 pass, see
+  # tests/knowledge_store/requirements-test.txt -- but not run here: this step
+  # has no Docker daemon reachable, and none of Cloud Build's plain containers
+  # do by default. Wiring that in is separate work (a docker-enabled step or
+  # self-hosted worker), not done yet.
+  #
+  # Three separate pytest invocations, not one. tests/integration/conftest.py
+  # and tests/e2e/conftest.py each start their OWN independent Firestore
+  # emulator subprocess and each stamp `FIRESTORE_EMULATOR_HOST` themselves --
+  # running both suites in a single pytest process races the two emulators
+  # against each other's env var and breaks pytest-asyncio's fixture-scope
+  # resolution (tests/e2e has no pytest.ini of its own; a combined invocation
+  # picks up only one config for both suites). unit/api need no emulator at
+  # all. Confirmed by running it the other way first: it produced real,
+  # intermittent errors in test_cross_service_contract.py.
   - id: gate-2-invariants
     name: python:3.12-slim
     entrypoint: bash
@@ -100,22 +164,40 @@ steps:
       - |
         set -euo pipefail
         apt-get update -qq && apt-get install -y -qq default-jre-headless curl >/dev/null
+        # Skips host-side Python compilation during the SDK install; documented
+        # speedup for CI/containers, no effect on the emulator itself.
+        export CLOUDSDK_SKIP_PY_COMPILATION=1
         curl -sSL https://sdk.cloud.google.com | bash -s -- --disable-prompts >/dev/null
+        # Installed once; tests/integration and tests/e2e each invoke this
+        # binary themselves, on their own port, when their own fixture runs.
         gcloud components install cloud-firestore-emulator --quiet
-        gcloud emulators firestore start --host-port=localhost:8080 &
-        pip install --quiet -e ./infra -r tests/requirements.txt
-        export FIRESTORE_EMULATOR_HOST=localhost:8080
+        # each app imports its own deps at import time (dotenv, segno, ...)
+        pip install --quiet -e ./infra -r tests/requirements.txt \
+          $(for f in */requirements.txt */app/requirements.txt; do [ -f "$f" ] && printf -- "-r %s " "$f"; done)
+
         pytest -q \
-          tests/integration \
           tests/api/user_service/test_auth_boundary.py \
           tests/api/whatsapp_adapter/test_webhook_signature.py \
+          tests/api/text_agent/test_auth_boundary.py \
+          tests/api/document_worker/test_auth_boundary.py \
           tests/unit/whatsapp_adapter/test_flow_crypto.py \
           tests/unit/infra/test_leases.py \
-          tests/e2e/test_idempotency.py \
-          tests/e2e/test_webhook_signature.py
-    waitFor: ["gate-1-static"]
+          tests/unit/infra/test_pricing.py \
+          tests/unit/infra/test_catalog_job_args.py \
+          tests/unit/user_service/test_gifting.py \
+          tests/unit/user_service/test_influencers.py \
+          tests/unit/user_service/test_user_id.py \
+          tests/unit/knowledge_store/test_graph_ids.py \
+          tests/unit/knowledge_store/test_embedder_batches.py
 
-  # gate 3: suite guardrails — assertions real, count hasn't dropped
+        pytest -q tests/integration
+
+        pytest -q tests/e2e/test_idempotency.py tests/e2e/test_webhook_signature.py
+    waitFor: ["fetch-test-gitlinks"]
+
+  # gate 3: suite guardrails — assertions real, count hasn't dropped.
+  # check_test_count runs `pytest --collect-only`, which imports every suite:
+  # a fresh container needs pytest and every app's deps, same as gate 2.
   - id: gate-3-guardrails
     name: python:3.12-slim
     entrypoint: bash
@@ -123,6 +205,8 @@ steps:
       - -c
       - |
         set -euo pipefail
+        pip install --quiet -e ./infra -r tests/requirements.txt \
+          $(for f in */requirements.txt */app/requirements.txt; do [ -f "$f" ] && printf -- "-r %s " "$f"; done)
         python3 tests/tooling/check_assertions.py
         python3 tests/tooling/check_test_count.py
     waitFor: ["gate-2-invariants"]
@@ -187,12 +271,14 @@ steps:
       - -c
       - |
         set -euo pipefail
+        # the revision verify just checked, by its tag -- not --to-latest and
+        # not status.traffic[0], which can be an old 0% tagged entry
+        REVISION="$(python3 ci/gates/verify_revision.py --print-revision \
+          --service="${_SERVICE_NAME}" --project="${_TARGET_PROJECT}" \
+          --region="${_REGION}" --tag="build-${_SHORT_SHA}")"
         gcloud run services update-traffic "${_SERVICE_NAME}" \
           --project="${_TARGET_PROJECT}" --region="${_REGION}" \
-          --to-latest
-        REVISION="$(gcloud run services describe "${_SERVICE_NAME}" \
-          --project="${_TARGET_PROJECT}" --region="${_REGION}" \
-          --format='value(status.traffic[0].revisionName)')"
+          --to-revisions="$REVISION=100"
         gcloud run revisions update "$REVISION" \
           --project="${_TARGET_PROJECT}" --region="${_REGION}" \
           --update-labels=served=true

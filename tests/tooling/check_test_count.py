@@ -16,29 +16,36 @@ from pathlib import Path
 TESTS_ROOT = Path(__file__).resolve().parent.parent
 WORKSPACE_ROOT = TESTS_ROOT.parent
 BASELINE = TESTS_ROOT / "outcomes" / "pytest" / "collected.json"
+# unit/api need no emulator; integration and e2e each start their own Firestore
+# emulator and must not be collected in the same pytest process (see build-deploy.yaml).
 SUITE_DIRS = ("unit", "api", "integration", "e2e")
 
 
 def collect_nodeids() -> list[str]:
-    """Return collected nodeids from the four runnable suites."""
-    targets = [str(TESTS_ROOT / name) for name in SUITE_DIRS]
-    completed = subprocess.run(
-        [sys.executable, "-m", "pytest", "--collect-only", "-q", *targets],
-        cwd=WORKSPACE_ROOT,
-        capture_output=True,
-        text=True,
-    )
-    if completed.returncode not in (0, 1):
-        sys.stderr.write(completed.stdout)
-        sys.stderr.write(completed.stderr)
-        raise SystemExit(
-            f"FAIL: pytest --collect-only exited {completed.returncode}"
-        )
+    """Return collected nodeids, one suite per pytest process.
+
+    Each suite directory is its own pytest rootdir here, so nodeids come back
+    relative to it (e.g. "infra/test_leases.py::..."), not prefixed "tests/".
+    Prefix with the suite name so ids stay unique and readable across suites.
+    """
     nodeids: list[str] = []
-    for line in completed.stdout.splitlines():
-        stripped = line.strip()
-        if "::" in stripped and stripped.startswith("tests/"):
-            nodeids.append(stripped)
+    for name in SUITE_DIRS:
+        args = [str(TESTS_ROOT / name)]
+        completed = subprocess.run(
+            [sys.executable, "-m", "pytest", "--collect-only", "-q", *args],
+            cwd=WORKSPACE_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        if completed.returncode not in (0, 1):
+            sys.stderr.write(completed.stdout)
+            sys.stderr.write(completed.stderr)
+            raise SystemExit(f"FAIL: pytest --collect-only ({name}) exited {completed.returncode}")
+        for line in completed.stdout.splitlines():
+            stripped = line.strip()
+            path = stripped.split("::", 1)[0]
+            if "::" in stripped and path.endswith(".py"):
+                nodeids.append(f"{name}/{stripped}")
     return nodeids
 
 

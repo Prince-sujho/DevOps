@@ -13,7 +13,7 @@ from typing import Any, Callable, Optional
 
 from infra.clients.users import GiftCardDelivery  # noqa: F401  (type reference only)
 from infra.hubble.types import HubbleOrder, HubbleProduct
-from infra.llm.oai.types.responses import ChatTurn, LlmResponse
+from infra.llm.oai.types.responses import Round, Speech
 
 
 # --------------------------------------------------------------------------
@@ -173,8 +173,24 @@ class RespondCall:
     """One recorded call into the faked OpenAI Responses client."""
 
     model: str
-    previous_response_id: Optional[str]
     input_message: list[Any]
+
+
+class FakeTurn:
+    """Stand-in for infra.llm.oai.responses.Turn: no tool rounds, finishes with a scripted Speech."""
+
+    def __init__(self, speech: Speech) -> None:
+        """Bind the Speech this turn resolves to once finished."""
+        self._speech = speech
+
+    async def rounds(self):
+        """These scripted journeys make no tool calls, so this yields nothing."""
+        return
+        yield  # pragma: no cover -- unreachable; makes this an async generator
+
+    async def finish(self) -> Speech:
+        """Return the scripted Speech."""
+        return self._speech
 
 
 class FakeOpenAIResponsesClient:
@@ -183,52 +199,36 @@ class FakeOpenAIResponsesClient:
     def __init__(self) -> None:
         """Start with an empty script and an empty call log."""
         self.calls: list[RespondCall] = []
-        self.token_count_calls: list[Optional[str]] = []
-        # Each entry is either a ChatTurn to return or an Exception to raise.
+        # Each entry is either a Speech to return or an Exception to raise.
         self.script: list[Any] = []
         self.default: Optional[Any] = None
-        self.next_tokens: int = 1000
 
     def reset(self) -> None:
         """Clear the call log and the script."""
         self.calls.clear()
-        self.token_count_calls.clear()
         self.script.clear()
         self.default = None
-        self.next_tokens = 1000
 
     def push(self, item: Any) -> None:
-        """Queue one scripted outcome for the next chat() call."""
+        """Queue one scripted outcome for the next turn() call."""
         self.script.append(item)
 
-    async def count_input_tokens(
-        self,
-        model: str,
-        previous_response_id: Optional[str],
-        input_message: Any,
-    ) -> int:
-        """Return the scripted token count."""
-        self.token_count_calls.append(previous_response_id)
-        return self.next_tokens
-
-    async def chat(self, **kwargs: Any) -> ChatTurn[LlmResponse]:
+    def turn(self, **kwargs: Any) -> FakeTurn:
         """Return (or raise) the next scripted outcome, recording the call."""
-        history = kwargs.get("history", kwargs.get("input_message", []))
         self.calls.append(
             RespondCall(
                 model=kwargs.get("model", ""),
-                previous_response_id=kwargs.get("previous_response_id"),
-                input_message=list(history),
+                input_message=list(kwargs.get("history", [])),
             )
         )
         outcome = self.script.pop(0) if self.script else self.default
         if outcome is None:
-            raise AssertionError("FakeOpenAIResponsesClient.chat called with no script")
+            raise AssertionError("FakeOpenAIResponsesClient.turn called with no script")
         if isinstance(outcome, BaseException):
             raise outcome
         if callable(outcome):
-            return outcome(kwargs)
-        return outcome
+            outcome = outcome(kwargs)
+        return FakeTurn(outcome)
 
 
 class FakeOpenAIImageClient:

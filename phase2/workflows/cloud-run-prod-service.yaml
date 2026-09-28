@@ -105,18 +105,20 @@ jobs:
           CFG="$(jq -r --arg s "$SERVICE" '.[$s]' ci/services.json)"
           RUN_ARGS="$(echo "$CFG" | jq -r '.run_args | join(" ")')"
 
+          # one quoted string: values with spaces (_GITLINKS, _RUN_ARGS) stay one substitution
+          SUBS="_SERVICE_NAME=$SERVICE"
+          SUBS+=",_CPU=$(echo "$CFG" | jq -r '.cpu // "1"')"
+          SUBS+=",_MEMORY=$(echo "$CFG" | jq -r '.memory // "512Mi"')"
+          SUBS+=",_TIMEOUT=$(echo "$CFG" | jq -r '.timeout // "240s"')"
+          SUBS+=",_MIN_INSTANCES=$(echo "$CFG" | jq -r '.min_instances // "1"')"
+          SUBS+=",_MAX_INSTANCES=$(echo "$CFG" | jq -r '.max_instances // "10"')"
+          SUBS+=",_VERIFY_METHOD=$(echo "$CFG" | jq -r '.verify // "health"')"
+          SUBS+=",_RUN_ARGS=$RUN_ARGS"
+          SUBS+=",_COMMIT_SHA=$SHA"
+          SUBS+=",_SHORT_SHA=$SHORT"
+
           gcloud builds submit --no-source \
             --project=sujho-478914 \
             --region=asia-south1 \
             --config=ci/deploy-only.yaml \
-            --substitutions=\
-_SERVICE_NAME="$SERVICE",\
-_CPU=$(echo "$CFG" | jq -r '.cpu // "1"'),\
-_MEMORY=$(echo "$CFG" | jq -r '.memory // "512Mi"'),\
-_TIMEOUT=$(echo "$CFG" | jq -r '.timeout // "240s"'),\
-_MIN_INSTANCES=$(echo "$CFG" | jq -r '.min_instances // "1"'),\
-_MAX_INSTANCES=$(echo "$CFG" | jq -r '.max_instances // "10"'),\
-_VERIFY_METHOD=$(echo "$CFG" | jq -r '.verify // "health"'),\
-_RUN_ARGS="$RUN_ARGS",\
-_COMMIT_SHA="$SHA",\
-_SHORT_SHA="$SHORT"
+            --substitutions="$SUBS"

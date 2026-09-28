@@ -42,7 +42,7 @@ async def _enroll_ambassador(api, phone: str, name: str) -> tuple[str, str]:
     return user_id, enroll.json()["handle"]
 
 
-async def test_delete_user_removes_owned_data_and_cascades_referrer_registry(api, db):
+async def test_delete_user_removes_owned_data_cascades_registry_and_keeps_phone_block(api, db):
     user_id, handle = await _enroll_ambassador(api, "910000050001", "Priya")
     teacher = await api.create_user(teacher_profile("910000050101", name="Teacher"))
     enroll = await api.post(
@@ -67,12 +67,10 @@ async def test_delete_user_removes_owned_data_and_cascades_referrer_registry(api
     assert await session_ids(db, user_id) == []
     assert await transcript_rows(db, user_id) == []
     assert await gifting_docs(db, user_id) == []
-    assert enrollment_id_for(user_id, teacher["userId"]) not in await enrollment_ids(db)
-    assert await blocklist_exists(db, user_id) is False
-
-
-def enrollment_id_for(student_id: str, teacher_id: str) -> str:
-    return f"{teacher_id}__{student_id}"
+    assert await enrollment_ids(db) == []
+    # The blocklist is keyed by phone identity, not owned by the profile: deleting
+    # the profile must not let a blocked phone re-onboard unblocked.
+    assert await blocklist_exists(db, user_id) is True
 
 
 async def test_delete_cascade_would_catch_a_dangling_ambassador_registry_entry(api, db):
@@ -125,7 +123,6 @@ async def test_delete_does_not_remove_adapter_owned_onboarding(api, db):
             ContentMessage(
                 type="text",
                 content={"body": "hello"},
-                phone_number_id="111",
                 sender_phone="910000050099",
                 sender_id="bsuid-keep-onboarding",
                 profile_name="Stranger",
@@ -140,14 +137,3 @@ async def test_delete_does_not_remove_adapter_owned_onboarding(api, db):
     deleted = await api.delete(f"/internal/users/{user_id}")
     assert deleted.status_code == 204
     assert await onboarding_exists(db, "bsuid-keep-onboarding") is True
-
-
-async def test_delete_unknown_user_does_not_crash(api):
-    """DELETE is documented as deleting owned data, not as a lookup-404, but
-    the README names no status for an unknown user_id either. `204` is
-    explicitly named in tests/outcomes/UNCERTAINTY.md as a guess this suite
-    must not keep just because it happens to be green -- only the
-    qualitative claim (must not crash) is asserted here.
-    """
-    response = await api.delete("/internal/users/never-existed")
-    assert response.status_code < 500

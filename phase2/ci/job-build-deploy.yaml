@@ -87,12 +87,39 @@ steps:
           echo "no prior deploy for ${_JOB_ID}, first deploy"
           BASE_SHA="${_COMMIT_SHA}"
         fi
+        # Decision 14: semgrep and mypy compare against the deployed commit.
+        # fetch-sujho fetched only the deploy SHA at depth 1; semgrep's baseline
+        # runs `git diff --merge-base`, which needs the history joining the two.
+        # Full history of this small repo, fetched here where the Developer
+        # Connect credentials are. If the baseline isn't there, fail the build.
+        if [ "$BASE_SHA" != "${_COMMIT_SHA}" ]; then
+          git fetch --unshallow origin
+        fi
+        git cat-file -e "$BASE_SHA^{commit}"
         echo "$BASE_SHA" > /workspace/.baseline_sha
         echo "baseline commit: $BASE_SHA"
+        # The mypy ratchet must count the same trees on both sides: the baseline
+        # commit with its own pinned package + infra checkouts, just as HEAD has
+        # them. Built on a volume, not in /workspace, so ruff/mypy/semgrep on
+        # HEAD never scan it. A gitlink the baseline predates is skipped.
+        git worktree add --detach /baseline "$BASE_SHA"
+        BASE_PATHS=""
+        for p in $_GITLINKS; do
+          if git -C /baseline ls-tree HEAD -- "$p" | grep -q '^160000'; then
+            BASE_PATHS="$BASE_PATHS $p"
+          fi
+        done
+        if [ -n "$BASE_PATHS" ]; then
+          python3 ci/checkout-gitlinks.py --root=/baseline --paths $BASE_PATHS \
+            --project="${_TARGET_PROJECT}" --region="${_REGION}" --connection="${_DC_CONNECTION}"
+        fi
+    volumes:
+      - name: baseline
+        path: /baseline
     waitFor: ["fetch-sujho"]
 
-  # needs git for the mypy worktree diff, semgrep's --baseline-commit, and
-  # `git ls-files` (detect-secrets-hook's file list)
+  # needs git for semgrep's --baseline-commit and `git ls-files`
+  # (detect-secrets-hook's file list)
   - id: gate-1-static
     name: python:3.12-slim
     entrypoint: bash
@@ -103,23 +130,55 @@ steps:
         apt-get update -qq && apt-get install -y -qq git >/dev/null
         pip install --quiet ruff mypy semgrep detect-secrets
         ruff check .
-        python3 ci/gates/mypy_ratchet.py --baseline-sha "$(cat /workspace/.baseline_sha)"
+        python3 ci/gates/mypy_ratchet.py --baseline-sha "$(cat /workspace/.baseline_sha)" --baseline-root /baseline
         semgrep scan --config=auto --error --baseline-commit "$(cat /workspace/.baseline_sha)"
         detect-secrets-hook --baseline tests/ci/.secrets.baseline $(git ls-files)
+    volumes:
+      - name: baseline
+        path: /baseline
     waitFor: ["check-entry-file-exists", "resolve-baseline"]
 
-  # knowledge_store has zero tests today (tracked gap, priority 2) — no
-  # invariant suite to run here yet. Not silently skipped: this step exists
-  # so the gap is visible in the pipeline, not just in someone's memory.
+  # gate 3's collected-test count imports every suite, but fetch-gitlinks only
+  # fetched this job's package. Same derivation as the service recipe. After
+  # gate-1, so static checks still see only this job's package; the image
+  # build copies only its own Dockerfile paths.
+  - id: fetch-test-gitlinks
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        TEST_GITLINKS="$(python3 -c 'import json; s = json.load(open("ci/services.json")); j = json.load(open("jobs/catalog.jobs.json")); print(" ".join(sorted({g for c in s.values() for g in c["gitlinks"]} | {g for c in j["image_groups"].values() for g in c["gitlinks"]})))')"
+        python3 ci/checkout-gitlinks.py --root=. --paths $TEST_GITLINKS \
+          --project="${_TARGET_PROJECT}" --region="${_REGION}" --connection="${_DC_CONNECTION}"
+    waitFor: ["gate-1-static"]
+
+  # knowledge_store's 9 pure-logic tests run here (verified passing). Its
+  # other 10 (real Neo4j via Docker) are verified passing locally too, but
+  # not run here: this container has no Docker daemon reachable. A future
+  # non-knowledge_store job falls through to the honest "no tests yet" line
+  # below, rather than silently skipping.
   - id: gate-2-invariants
     name: python:3.12-slim
     entrypoint: bash
     args:
       - -c
       - |
-        echo "no invariant tests exist for this job's package yet — known gap, not run"
-    waitFor: ["gate-1-static"]
+        set -euo pipefail
+        if echo "${_GITLINKS}" | grep -qw "knowledge_store"; then
+          pip install --quiet -e ./infra -r tests/requirements.txt -r knowledge_store/requirements.txt
+          pytest -q \
+            tests/unit/infra/test_catalog_job_args.py \
+            tests/unit/knowledge_store/test_graph_ids.py \
+            tests/unit/knowledge_store/test_embedder_batches.py
+        else
+          echo "no invariant tests exist for this job's package yet — known gap, not run"
+        fi
+    waitFor: ["fetch-test-gitlinks"]
 
+  # check_test_count runs `pytest --collect-only` over every suite: a fresh
+  # container needs pytest and every app's deps.
   - id: gate-3-guardrails
     name: python:3.12-slim
     entrypoint: bash
@@ -127,6 +186,8 @@ steps:
       - -c
       - |
         set -euo pipefail
+        pip install --quiet -e ./infra -r tests/requirements.txt \
+          $(for f in */requirements.txt */app/requirements.txt; do [ -f "$f" ] && printf -- "-r %s " "$f"; done)
         python3 tests/tooling/check_assertions.py
         python3 tests/tooling/check_test_count.py
     waitFor: ["gate-2-invariants"]

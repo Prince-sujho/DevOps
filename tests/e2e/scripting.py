@@ -6,7 +6,7 @@ from typing import Any, Optional
 
 from infra.conversation import OutboundMessage, TextMessage
 from infra.llm.oai.types.messages import AssistantMessage
-from infra.llm.oai.types.responses import ChatTurn, LlmResponse, Round
+from infra.llm.oai.types.responses import LlmResponse, Speech
 
 from . import constants as K
 
@@ -16,18 +16,19 @@ def turn(
     response_id: str,
     messages: Optional[list[OutboundMessage]] = None,
     reaction: Optional[str] = None,
-) -> ChatTurn[LlmResponse]:
-    """Build one scripted completed model turn."""
+) -> Speech[LlmResponse]:
+    """Build one scripted completed model turn: no tool rounds, straight to speech."""
     outbound = messages or [TextMessage(type="text", text="ok")]
     speech_text = next(
         (m.text for m in outbound if getattr(m, "type", None) == "text"),
         "ok",
     )
-    return ChatTurn(
+    return Speech(
+        responseId=response_id,
+        items=[],
         parsed=LlmResponse(reaction=reaction, messages=outbound),
-        actions=[],
-        thought=Round(responseId=response_id, items=[]),
-        speech=AssistantMessage(text=speech_text),
+        message=AssistantMessage(text=speech_text),
+        web=[],
     )
 
 

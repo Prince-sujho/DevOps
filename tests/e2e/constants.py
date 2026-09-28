@@ -33,14 +33,12 @@ from infra.firestore.collections import (
     THREADS_SUBCOLLECTION,
     USERS_COLLECTION,
 )
-from whatsapp_adapter.app.src.constants import (
-    DOCUMENT_FORM_SCREEN,
-    ONBOARDING_FLOW_TOKEN,
-)
+from whatsapp_adapter.app.src.constants import ONBOARDING_FLOW_TOKEN
 from whatsapp_adapter.app.src.flows.constants import (
-    INSTITUTION_SCREEN,
+    DOCUMENT_FORM_SCREEN,
     PERSONA_STUDENT_BUTTON_ID,
     PERSONA_TEACHER_BUTTON_ID,
+    RESULTS_SCREEN,
 )
 
 TEST_PROJECT: Final[str] = "sujho-e2e-test"
@@ -71,16 +69,16 @@ CONVERSATION_MEDIA_BUCKET: Final[str] = "sujho-e2e-test-media"
 # --- Literal user-facing copy: bound to the real infra.canned.CANNED_RESPONSES
 # catalog, not a second hand-transcribed copy. PRODUCT_NAME comes from
 # infra.constants (the same module infra/canned/constants.py itself uses to
-# build intro_template). ---
+# build intro). ---
 _ONBOARDING_COPY = CANNED_RESPONSES.onboarding
 CANNED_ERROR: Final[str] = CANNED_RESPONSES.error
 CANNED_BLOCKED: Final[str] = CANNED_RESPONSES.blocked
 PERSONA_QUESTION: Final[str] = _ONBOARDING_COPY.persona_question
 PHONE_REQUEST: Final[str] = _ONBOARDING_COPY.phone_request
 PHONE_ACK: Final[str] = _ONBOARDING_COPY.phone_ack
-INTRO_TEMPLATE: Final[str] = _ONBOARDING_COPY.intro_template
-STUDENT_LAUNCH_TEMPLATE: Final[str] = _ONBOARDING_COPY.launch_body_template["student"]
-TEACHER_LAUNCH_TEMPLATE: Final[str] = _ONBOARDING_COPY.launch_body_template["teacher"]
+INTRO: Final[str] = _ONBOARDING_COPY.intro
+STUDENT_LAUNCH_BODY: Final[str] = _ONBOARDING_COPY.launch_body["student"]
+TEACHER_LAUNCH_BODY: Final[str] = _ONBOARDING_COPY.launch_body["teacher"]
 ONBOARDING_FLOW_CTA: Final[str] = CANNED_RESPONSES.flow_cta["onboarding"]
 DOCUMENT_FLOW_CTA: Final[str] = CANNED_RESPONSES.flow_cta["document"]
 PERSONA_STUDENT_BUTTON_TITLE: Final[str] = _ONBOARDING_COPY.persona_button_titles["student"]

@@ -1,7 +1,7 @@
 # Sujho DevOps Plan
 
-Plan, not live. Code gets checked, built, tested on a practice version,
-then sent to real users only with a senior's OK — every step a person
+Code gets checked, built, tested on a practice version,
+then sent to real users only with a senior's OK, every step a person
 decides, nothing automatic. Meant to be read, not run.
 
 ## phase1 — who can merge
@@ -32,7 +32,7 @@ real users, undoing it if something breaks.
 - `scripts/rollback-cloudrun.sh`, `pick_rollback_revision.py` — roll back to the last version that really worked
 - `scripts/provision-projects.sh`, `provision-wif.sh`, `developer-connect-setup.sh`, `pin-submodules.sh` — one-time GCP setup
 - `IAM-table.md` — exactly who/what gets which access, done by hand
-- `pointer-bump/` — auto-opens a PR when a service repo updates, so nothing gets forgotten
+- `pointer-bump/` — auto-opens a PR when a service repo updates, so nothing gets forgotten. Template only — not copied into any service repo yet
 - `jobs/` — same system as above, for background jobs instead of live services
 
 ## phase3 — weekly health check (off for now)
@@ -46,8 +46,32 @@ if something's quietly wrong.
 
 ## Other folders
 
-- `tests` — a copy of the checks that prove the product actually works
+- `tests` — 65 kept tests plus 19 added for `knowledge_store` (84 total).
+  A few of those tests loop over a list (e.g. one test checks every route
+  by itself, one by one) — running that one test does 71 checks, not 1.
+  Add up all those checks and you get 170, but there are still 84 tests.
+  All verified passing, except one known Firestore-emulator limitation,
+  not a product bug.
 - `Eval-Suite` — a copy of the checks on how well the AI parts behave. Not decided yet if it's part of this plan.
+
+## How to run the tests
+
+```bash
+pip install -e ./infra -r tests/requirements.txt
+pytest tests/unit tests/api      # no setup needed
+pytest tests/integration         # needs gcloud + Java
+pytest tests/e2e                 # needs gcloud + Java, run separately from integration
+pytest tests/knowledge_store     # needs Docker; pip install its requirements-test.txt first
+```
+Before merging:
+```bash
+python3 tests/tooling/check_assertions.py
+python3 tests/tooling/check_test_count.py
+```
+Takes ~30 seconds on a laptop. On the Pre-Prod pipeline, expect ~3–7.5
+minutes — mostly a fresh container installing tools, not the tests
+themselves. That's an estimate; never timed for real, `sujho-preprod`
+doesn't exist yet.
 
 ## What's still left — Arnav, this is for you
 
@@ -65,6 +89,9 @@ my end:
 - Phase 3's weekly checks (mutation testing + eval replay) are ready but
   switched off — waiting on the test suite being committed and a runner
   machine existing.
-- None of this has been run against real GCP. Every recipe here has been
-  checked for internal consistency, not proven to actually execute — that
-  only happens once `sujho-preprod` exists and someone runs it for real.
+- `knowledge_store`'s 10 Docker/Neo4j tests pass locally but aren't wired
+  into either pipeline — Cloud Build's containers have no Docker daemon to
+  reach. Needs a docker-enabled step or its own worker. Its other 9 tests
+  now run for real in `job-build-deploy.yaml`'s gate — that pipeline no
+  longer claims `knowledge_store` has zero tests.
+

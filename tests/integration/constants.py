@@ -13,7 +13,7 @@ from typing import Final
 # Bound to the real named constants instead of a second hand-transcribed
 # copy (see tests/outcomes/MIRRORED_AND_WRONG.md) -- a change to the ladder,
 # the gap window, or the collection map is automatically visible here.
-from infra.clients.users import SESSION_GAP_MS
+from infra.clients.users import SESSION_GAP_MS, WHATSAPP_THREAD_KEY
 from infra.firestore.collections import (
     BLOCKLIST_COLLECTION,
     CAMPAIGNS_SUBCOLLECTION,
@@ -37,8 +37,6 @@ USERS_SERVICE_SECRET: Final[str] = "test-users-service-secret"
 USERS_USER_ID_HMAC_SECRET: Final[str] = "test-users-user-id-hmac-secret"
 PUBLIC_ORIGIN: Final[str] = "https://sujho.test"
 CONVERSATION_MEDIA_BUCKET: Final[str] = "sujho-integration-test-media"
-
-WHATSAPP_THREAD_KEY: Final[str] = "whatsapp"
 
 AMAZON_PRODUCT_ID: Final[str] = "01GMAVS2CHXR0XP1BZSTA9A44K"
 AMAZON_BRAND: Final[str] = REWARD_PRODUCTS[AMAZON_PRODUCT_ID]

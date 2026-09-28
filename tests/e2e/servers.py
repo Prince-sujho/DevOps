@@ -205,7 +205,7 @@ def build_text_agent_lifespan(fakes: Fakes, users_base_url: str):
             base_url=users_base_url,
             service_secret=K.USERS_SERVICE_SECRET,
         )
-        respond_mod.OpenAIResponsesClient = lambda runtime, usage: fakes.openai
+        respond_mod.OpenAIResponsesClient = lambda runtime, usage, service_tier: fakes.openai
         runtime = OpenAIRuntime(api_key="test-openai-api-key")
         respond = RespondService(
             runtime=runtime,

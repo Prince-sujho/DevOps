@@ -18,7 +18,7 @@ def run(cmd: list[str]) -> str:
     return subprocess.run(cmd, check=True, capture_output=True, text=True).stdout.strip()
 
 
-def tagged_url(service: str, project: str, region: str, tag: str) -> str:
+def tagged_entry(service: str, project: str, region: str, tag: str) -> dict:
     out = run(
         [
             "gcloud", "run", "services", "describe", service,
@@ -28,9 +28,16 @@ def tagged_url(service: str, project: str, region: str, tag: str) -> str:
     )
     data = json.loads(out)
     for t in data.get("status", {}).get("traffic", []) or []:
-        if t.get("tag") == tag and t.get("url"):
-            return str(t["url"])
+        if t.get("tag") == tag and t.get("revisionName"):
+            return t
     raise SystemExit(f"refuse: no traffic entry tagged {tag!r} on {service}")
+
+
+def tagged_url(service: str, project: str, region: str, tag: str) -> str:
+    entry = tagged_entry(service, project, region, tag)
+    if not entry.get("url"):
+        raise SystemExit(f"refuse: traffic entry tagged {tag!r} on {service} has no url")
+    return str(entry["url"])
 
 
 def check_via_http(url: str, expect_sha: str) -> bool:
@@ -50,22 +57,27 @@ def check_via_http(url: str, expect_sha: str) -> bool:
     return str(body.get("commit_sha", "")).startswith(expect_sha[:7])
 
 
+def revision_is_ready_at(revision: dict, expect_sha: str) -> bool:
+    """The one revision is Ready and carries the expected commit — no other revision counts."""
+    conditions = revision.get("status", {}).get("conditions", []) or []
+    ready = any(c.get("type") == "Ready" and c.get("status") == "True" for c in conditions)
+    for c in revision.get("spec", {}).get("containers", []) or []:
+        env = {e.get("name"): e.get("value") for e in c.get("env", []) or []}
+        if ready and env.get("RELEASE_COMMIT_SHA", "") == expect_sha:
+            return True
+    return False
+
+
 def check_via_revision(service: str, project: str, region: str, tag: str, expect_sha: str) -> bool:
+    name = tagged_entry(service, project, region, tag)["revisionName"]
     out = run(
         [
-            "gcloud", "run", "revisions", "list",
-            f"--service={service}", f"--project={project}", f"--region={region}",
+            "gcloud", "run", "revisions", "describe", name,
+            f"--project={project}", f"--region={region}",
             "--format=json",
         ]
     )
-    revisions = json.loads(out)
-    for rev in revisions:
-        containers = rev.get("spec", {}).get("template", {}).get("spec", {}).get("containers", [])
-        for c in containers:
-            env = {e.get("name"): e.get("value") for e in c.get("env", []) or []}
-            if env.get("RELEASE_COMMIT_SHA", "").startswith(expect_sha[:7]):
-                return True
-    return False
+    return revision_is_ready_at(json.loads(out), expect_sha)
 
 
 def main() -> int:
@@ -74,11 +86,20 @@ def main() -> int:
     p.add_argument("--project", required=True)
     p.add_argument("--region", required=True)
     p.add_argument("--tag", required=True)
-    p.add_argument("--expect-sha", required=True)
+    p.add_argument("--expect-sha", default="")
     p.add_argument("--method", choices=["health", "revision"], default="health")
     p.add_argument("--attempts", type=int, default=15)
     p.add_argument("--delay-seconds", type=int, default=10)
+    # prints the revision behind --tag; shift-traffic uses it to move traffic
+    # to (and label) exactly the revision this script verified
+    p.add_argument("--print-revision", action="store_true")
     args = p.parse_args()
+
+    if args.print_revision:
+        print(tagged_entry(args.service, args.project, args.region, args.tag)["revisionName"])
+        return 0
+    if not args.expect_sha:
+        p.error("--expect-sha is required unless --print-revision")
 
     for attempt in range(1, args.attempts + 1):
         ok = False

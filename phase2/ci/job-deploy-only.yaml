@@ -5,6 +5,7 @@ substitutions:
   _JOB_ID: ""
   _IMAGE: ""
   _RUNTIME_SA: ""
+  _ENTRY_MODULE: ""
   _CPU: "1"
   _MEMORY: "512Mi"
   _TASK_TIMEOUT: "3600s"
@@ -49,6 +50,7 @@ steps:
         gcloud run jobs deploy "${_JOB_ID}" \
           --project="${_TARGET_PROJECT}" --region="${_REGION}" \
           --image="${_REGISTRY}/${_IMAGE}@${DIGEST}" \
+          --command=python3 --args="-m,${_ENTRY_MODULE}" \
           --cpu="${_CPU}" --memory="${_MEMORY}" --task-timeout="${_TASK_TIMEOUT}" \
           --tasks="${_TASKS}" --parallelism="${_PARALLELISM}" --max-retries="${_MAX_RETRIES}" \
           --service-account="${_RUNTIME_SA}@${_TARGET_PROJECT}.iam.gserviceaccount.com" \

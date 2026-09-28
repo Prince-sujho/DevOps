@@ -99,12 +99,14 @@ steps:
       - -c
       - |
         set -euo pipefail
+        # the revision verify just checked, by its tag -- not --to-latest and
+        # not status.traffic[0], which can be an old 0% tagged entry
+        REVISION="$(python3 ci/gates/verify_revision.py --print-revision \
+          --service="${_SERVICE_NAME}" --project="${_TARGET_PROJECT}" \
+          --region="${_REGION}" --tag="build-${_SHORT_SHA}")"
         gcloud run services update-traffic "${_SERVICE_NAME}" \
           --project="${_TARGET_PROJECT}" --region="${_REGION}" \
-          --to-latest
-        REVISION="$(gcloud run services describe "${_SERVICE_NAME}" \
-          --project="${_TARGET_PROJECT}" --region="${_REGION}" \
-          --format='value(status.traffic[0].revisionName)')"
+          --to-revisions="$REVISION=100"
         gcloud run revisions update "$REVISION" \
           --project="${_TARGET_PROJECT}" --region="${_REGION}" \
           --update-labels=served=true
