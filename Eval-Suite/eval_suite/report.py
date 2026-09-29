@@ -7,11 +7,16 @@ from pathlib import Path
 from .types import EvalRunResult
 
 
-def write_reports(root: Path, run: EvalRunResult) -> None:
-    root.mkdir(parents=True, exist_ok=True)
-    (root / f"{run.run_id}.json").write_text(
-        run.model_dump_json(indent=2), encoding="utf-8"
-    )
+def _scoreboard_lines(run: EvalRunResult) -> list[str]:
+    """The Markdown scoreboard rows for one eval run.
+
+    Args:
+        run: the full run result to render.
+    Returns:
+        Markdown lines, without a trailing newline.
+    Raises:
+        None.
+    """
     lines = [
         f"# Eval-Suite {run.run_id}",
         "",
@@ -26,6 +31,26 @@ def write_reports(root: Path, run: EvalRunResult) -> None:
         hard = "<br>".join(result.failures) if result.failures else ""
         soft = "<br>".join(result.soft) if result.soft else ""
         lines.append(
-            f"| `{result.case_id}` | {result.status} | {hard} | {soft} | {result.latency_ms} |"
+            f"| `{result.case_id}` | {result.status} | {hard} | {soft} | "
+            f"{result.latency_ms} |"
         )
-    (root / f"{run.run_id}.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return lines
+
+
+def write_reports(root: Path, run: EvalRunResult) -> None:
+    """Write run's JSON report and a Markdown scoreboard table under root.
+
+    Args:
+        root: directory to write into, created if it doesn't exist.
+        run: the full run result to report.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
+    root.mkdir(parents=True, exist_ok=True)
+    (root / f"{run.run_id}.json").write_text(
+        run.model_dump_json(indent=2), encoding="utf-8"
+    )
+    text = "\n".join(_scoreboard_lines(run)) + "\n"
+    (root / f"{run.run_id}.md").write_text(text, encoding="utf-8")

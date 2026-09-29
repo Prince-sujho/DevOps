@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 # Shifts Cloud Run traffic to a previous revision. No rebuild, no retagging.
 # Empty --revision: newest served=true revision older than the one serving.
+#
+# Dry-run by default, matching every other mutating script in this repo —
+# --apply is required to actually shift traffic.
+#
+# Usage: ./rollback-cloudrun.sh --project=P --service=S [--revision=REV] [--apply]
+# Arguments: --project, --service required; --revision optional (auto-picked
+#   if omitted); --region defaults to asia-south1; --apply actually shifts
+#   traffic (default: print the plan only).
+# Exit codes: 0 ok; 2 unknown argument, missing --help, or missing
+#   --project/--service.
 
 set -euo pipefail
 
@@ -10,7 +20,7 @@ PROJECT=""
 SERVICE=""
 REVISION=""
 REGION="asia-south1"
-DRY_RUN=0
+APPLY=0
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -22,9 +32,9 @@ while [ "$#" -gt 0 ]; do
     --revision=*) REVISION="${1#*=}"; shift ;;
     --region) REGION="${2:-}"; shift 2 ;;
     --region=*) REGION="${1#*=}"; shift ;;
-    --dry-run) DRY_RUN=1; shift ;;
+    --apply) APPLY=1; shift ;;
     -h|--help)
-      echo "usage: $0 --project=P --service=S [--revision=REV] [--dry-run]" >&2
+      echo "usage: $0 --project=P --service=S [--revision=REV] [--apply]" >&2
       exit 2
       ;;
     *) echo "error: unknown argument: $1" >&2; exit 2 ;;
@@ -37,7 +47,7 @@ if [ -z "$PROJECT" ] || [ -z "$SERVICE" ]; then
 fi
 
 run() {
-  if [ "$DRY_RUN" -eq 1 ]; then
+  if [ "$APPLY" -ne 1 ]; then
     printf 'DRY-RUN'
     printf ' %q' "$@"
     printf '\n'
@@ -47,9 +57,11 @@ run() {
 }
 
 if [ -z "$REVISION" ]; then
-  if [ "$DRY_RUN" -eq 1 ]; then
-    echo "DRY-RUN would query GCP and pick an older Ready revision of ${SERVICE} in ${PROJECT}"
-    echo "DRY-RUN would refuse if a newer Ready revision has no traffic."
+  if [ "$APPLY" -ne 1 ]; then
+    echo "DRY-RUN would query GCP and pick the newest served=true revision of"
+    echo "${SERVICE} in ${PROJECT} older than the one currently serving."
+    echo "DRY-RUN would refuse if the serving revision has no served=true label,"
+    echo "or if no older served=true revision exists."
     REVISION="WOULD_QUERY"
   else
     tmp="$(mktemp -d "${TMPDIR:-/tmp}/rollback.XXXXXX")"
@@ -60,7 +72,9 @@ if [ -z "$REVISION" ]; then
     gcloud run revisions list --service="$SERVICE" \
       --project="$PROJECT" --region="$REGION" --format=json \
       > "$tmp/revisions.json"
-    REVISION="$(python3 "${HERE}/pick_rollback_revision.py" "$tmp/service.json" "$tmp/revisions.json")"
+    REVISION="$(
+      python3 "${HERE}/pick_rollback_revision.py" "$tmp/service.json" "$tmp/revisions.json"
+    )"
     echo "Serving revision stays until update-traffic. Rolling to ${REVISION}"
   fi
 fi

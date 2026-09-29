@@ -9,6 +9,15 @@ from eval_suite.users import EVAL_USERS, EvalUsers
 
 @pytest.mark.asyncio
 async def test_clone_is_isolated_from_the_fixture() -> None:
+    """A clone's mutations never touch the shared EVAL_USERS fixture.
+
+    Args:
+        None.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
     users = EvalUsers()
     clone = users.clone("student-1783940069205", "eval-student-grade-12-math")
     assert clone.userId == "eval-student-grade-12-math--student-1783940069205"
@@ -21,6 +30,15 @@ async def test_clone_is_isolated_from_the_fixture() -> None:
 
 @pytest.mark.asyncio
 async def test_drop_removes_the_clone() -> None:
+    """Dropping a clone makes it unreachable via get_user.
+
+    Args:
+        None.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
     users = EvalUsers()
     clone = users.clone("x", "eval-student-grade-6-math")
     users.drop(clone.userId)
@@ -30,6 +48,15 @@ async def test_drop_removes_the_clone() -> None:
 
 @pytest.mark.asyncio
 async def test_enrollment_is_empty_and_unknown_ids_crash() -> None:
+    """Enrollment is always empty; batch_get_users raises for a missing id.
+
+    Args:
+        None.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
     users = EvalUsers()
     clone = users.clone("x", "eval-teacher-grade-9-science")
     enrollment = await users.get_enrollment_ids(clone.userId)
@@ -41,6 +68,15 @@ async def test_enrollment_is_empty_and_unknown_ids_crash() -> None:
 
 @pytest.mark.asyncio
 async def test_undirectory_school_refuses_ambassador_enroll() -> None:
+    """Enrollment is refused when the clone's institution has no recognised id.
+
+    Args:
+        None.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
     users = EvalUsers()
     clone = users.clone("x", "eval-student-grade-9-math")
     result = await users.enroll_ambassador(clone.userId)
@@ -49,6 +85,15 @@ async def test_undirectory_school_refuses_ambassador_enroll() -> None:
 
 @pytest.mark.asyncio
 async def test_redeem_does_not_mint_a_card() -> None:
+    """redeem_reward always raises — eval users have no gift-card mint.
+
+    Args:
+        None.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
     users = EvalUsers()
     clone = users.clone("x", "eval-student-grade-9-math")
     with pytest.raises(RuntimeError, match="no gift-card mint"):

@@ -63,4 +63,5 @@ jobs:
           if [ -n "$REVISION" ]; then
             extra=(--revision="$REVISION")
           fi
-          bash scripts/rollback-cloudrun.sh --project="$PROJECT" --service="$SERVICE" "${extra[@]}"
+          bash scripts/rollback-cloudrun.sh \
+            --project="$PROJECT" --service="$SERVICE" --apply "${extra[@]}"

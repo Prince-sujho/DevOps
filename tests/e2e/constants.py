@@ -81,8 +81,12 @@ STUDENT_LAUNCH_BODY: Final[str] = _ONBOARDING_COPY.launch_body["student"]
 TEACHER_LAUNCH_BODY: Final[str] = _ONBOARDING_COPY.launch_body["teacher"]
 ONBOARDING_FLOW_CTA: Final[str] = CANNED_RESPONSES.flow_cta["onboarding"]
 DOCUMENT_FLOW_CTA: Final[str] = CANNED_RESPONSES.flow_cta["document"]
-PERSONA_STUDENT_BUTTON_TITLE: Final[str] = _ONBOARDING_COPY.persona_button_titles["student"]
-PERSONA_TEACHER_BUTTON_TITLE: Final[str] = _ONBOARDING_COPY.persona_button_titles["teacher"]
+PERSONA_STUDENT_BUTTON_TITLE: Final[str] = (
+    _ONBOARDING_COPY.persona_button_titles["student"]
+)
+PERSONA_TEACHER_BUTTON_TITLE: Final[str] = (
+    _ONBOARDING_COPY.persona_button_titles["teacher"]
+)
 
 WHATSAPP_THREAD_KEY: Final[str] = "whatsapp"
 

@@ -34,32 +34,81 @@ pytestmark = pytest.mark.asyncio
 BASE_MS = 1_780_000_000_000
 CAMPAIGN_PLATFORM, OTHER_PLATFORM = list(CHANNELS)[:2]
 OPEN_WINDOW = {"startMs": 1, "endMs": 9_999_999_999_999}
-NO_PAYOUT = {"baseInr": 0, "perBlockInr": 0, "blockSize": 1, "incentiveCapInr": 0}
+NO_PAYOUT = {
+    "baseInr": 0,
+    "perBlockInr": 0,
+    "blockSize": 1,
+    "incentiveCapInr": 0,
+}
 
 
 async def _influencer_with_campaign(api, handle: str) -> str:
+    """Seed an influencer with an active reward campaign.
+
+    Args:
+        api: the UsersApi test client.
+    Returns:
+        The influencer handle.
+    Raises:
+        None.
+    """
     created = await api.post("/internal/influencers", json={"handle": handle})
     assert created.status_code == 200
     handle = created.json()["handle"]
     campaign = await api.post(
         f"/internal/influencers/{handle}/campaigns",
-        json={"platform": CAMPAIGN_PLATFORM, **OPEN_WINDOW, "payout": NO_PAYOUT},
+        json={
+            "platform": CAMPAIGN_PLATFORM,
+            **OPEN_WINDOW,
+            "payout": NO_PAYOUT,
+        },
     )
     assert campaign.status_code == 200
     return handle
 
 
 async def _click(api, handle: str, platform) -> None:
-    response = await api.post(f"/internal/referrers/{handle}/click", json={"platform": platform})
+    """Record one referral click.
+
+    Args:
+        api: the UsersApi test client.
+        handle: the referrer handle the click is attributed to.
+        platform: the click's originating platform.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
+    response = await api.post(
+        f"/internal/referrers/{handle}/click", json={"platform": platform}
+    )
     assert response.status_code == 204
 
 
 async def test_directory_activity_moves_with_session_rows(api):
-    """sessionCount / lastMessageAtMs on the directory follow the appended sessions."""
+    """The directory's derived activity state moves with real session rows, not
+    a stored counter.
+
+    Args:
+        api: the UsersApi test client.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
     profile = await api.create_user(student_profile("910000040001", name="Dir"))
     user_id = profile["userId"]
 
     async def activity():
+        """Re-fetch this user's directory activity block.
+
+        Args:
+            None.
+        Returns:
+            The activity object from the directory response JSON.
+        Raises:
+            AssertionError: the directory response status is not 200.
+        """
         response = await api.get(f"/internal/directory/{user_id}")
         assert response.status_code == 200
         return response.json()["activity"]
@@ -68,8 +117,12 @@ async def test_directory_activity_moves_with_session_rows(api):
     assert before["sessionCount"] == 0
     assert before["lastMessageAtMs"] is None
 
-    for count, at_ms in enumerate((BASE_MS, BASE_MS + K.SESSION_GAP_MS + 1), start=1):
-        appended = await api.append(user_id, [user_message("hi", at_ms, turn_id=f"t{count}")])
+    for count, at_ms in enumerate(
+        (BASE_MS, BASE_MS + K.SESSION_GAP_MS + 1), start=1
+    ):
+        appended = await api.append(
+            user_id, [user_message("hi", at_ms, turn_id=f"t{count}")]
+        )
         assert appended.status_code == 200
         now = await activity()
         assert now["sessionCount"] == count
@@ -77,7 +130,17 @@ async def test_directory_activity_moves_with_session_rows(api):
 
 
 async def test_ambassador_points_move_with_attributed_user_rows(api, db):
-    """points == number of users attributed to the handle; each referral moves it by one."""
+    """Ambassador points are derived from real attributed-user rows, not a
+    stored counter.
+
+    Args:
+        api: the UsersApi test client.
+        db: the emulator-bound Firestore client.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
     holder = await api.create_user(
         student_profile("910000040002", name="Arjun", institution_id="school-1")
     )
@@ -96,21 +159,46 @@ async def test_ambassador_points_move_with_attributed_user_rows(api, db):
         status = await api.get(f"/internal/users/{holder_id}/ambassador")
         assert status.status_code == 200
         assert status.json()["points"] == points
-    assert status.json()["studentsReferred"] + status.json()["teachersReferred"] == len(referrals)
+    assert status.json()["studentsReferred"] + status.json()[
+        "teachersReferred"
+    ] == len(referrals)
 
     stored = await referrer_doc(db, handle)
     assert forbidden_counters_present(stored) == set()
     assert stored["userId"] == holder_id
 
 
-async def test_influencer_funnel_moves_with_clicks_onboards_and_retention(api, db):
-    """Campaign stats equal its channel's click rows and attributed users; other channels go to misc."""
-    handle = await _influencer_with_campaign(api, "funnelkid")
+async def _influencer_report(api, handle: str):
+    """Re-fetch this influencer's report.
 
-    async def report():
-        response = await api.get(f"/internal/influencers/{handle}")
-        assert response.status_code == 200
-        return response.json()
+    Args:
+        api: the UsersApi test client.
+        handle: the influencer handle.
+    Returns:
+        The JSON value parsed from that text.
+    Raises:
+        AssertionError: the influencer report response status is not 200.
+    """
+    response = await api.get(f"/internal/influencers/{handle}")
+    assert response.status_code == 200
+    return response.json()
+
+
+async def test_influencer_funnel_moves_with_clicks_onboards_and_retention(
+    api, db
+):
+    """The influencer funnel is derived from real clicks/onboards/retention
+    rows.
+
+    Args:
+        api: the UsersApi test client.
+        db: the emulator-bound Firestore client.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
+    handle = await _influencer_with_campaign(api, "funnelkid")
 
     await _click(api, handle, CAMPAIGN_PLATFORM)
     await _click(api, handle, CAMPAIGN_PLATFORM)
@@ -121,7 +209,7 @@ async def test_influencer_funnel_moves_with_clicks_onboards_and_retention(api, d
         student_profile("910000040201", name="Onboarded"),
         texts=[referral_prefill(handle, CAMPAIGN_PLATFORM)],
     )
-    mid = await report()
+    mid = await _influencer_report(api, handle)
     stats = mid["campaigns"][0]["stats"]
     assert stats["clicks"] == 2
     assert mid["miscellaneous"]["clicks"] == 1
@@ -129,15 +217,28 @@ async def test_influencer_funnel_moves_with_clicks_onboards_and_retention(api, d
     assert stats["retained"] == 0
 
     retained_at = referred["createdAtMs"] + K.RETENTION_WINDOW_MS
-    append = await api.append(referred["userId"], [user_message("still here", retained_at, turn_id="r")])
+    append = await api.append(
+        referred["userId"],
+        [user_message("still here", retained_at, turn_id="r")],
+    )
     assert append.status_code == 200
-    after = (await report())["campaigns"][0]["stats"]
+    after = (await _influencer_report(api, handle))["campaigns"][0]["stats"]
     assert after["retained"] == 1
     assert after["onboards"] == 1
 
 
 async def test_influencer_started_moves_with_buffered_onboarding_rows(api, db):
-    """An unfinished onboarding that mentions the handle on the campaign's channel counts as started."""
+    """The influencer "started" count is derived from real buffered onboarding
+    rows.
+
+    Args:
+        api: the UsersApi test client.
+        db: the emulator-bound Firestore client.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
     handle = await _influencer_with_campaign(api, "startkid")
     pending = PendingAction(
         action="select_persona",
@@ -163,14 +264,27 @@ async def test_influencer_started_moves_with_buffered_onboarding_rows(api, db):
 
 
 async def test_nothing_writes_stored_counters_for_points_or_balances(api, db):
-    """Inverse of derive-on-read: referrer, campaign and user docs hold no stored counters."""
+    """No route writes a stored points/balance counter; everything is derived on
+    read.
+
+    Args:
+        api: the UsersApi test client.
+        db: the emulator-bound Firestore client.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
     holder = await api.create_user(
         student_profile("910000040004", name="Maya", institution_id="school-1")
     )
     holder_id = holder["userId"]
-    handle = (await api.post(f"/internal/users/{holder_id}/ambassador")).json()["handle"]
+    handle = (await api.post(f"/internal/users/{holder_id}/ambassador")).json()[
+        "handle"
+    ]
     await api.create_user(
-        student_profile("910000040104", name="Kid"), texts=[referral_prefill(handle, None)]
+        student_profile("910000040104", name="Kid"),
+        texts=[referral_prefill(handle, None)],
     )
     inf_handle = await _influencer_with_campaign(api, "nocounters")
     await _click(api, inf_handle, CAMPAIGN_PLATFORM)

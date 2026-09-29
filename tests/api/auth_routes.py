@@ -18,12 +18,29 @@ PUBLIC_ROUTES = frozenset(
 
 
 def _concrete(path: str) -> str:
-    """Substitute a syntactically plausible dummy value for every {param}."""
+    """Substitute a syntactically plausible dummy value for every {param}.
+
+    Args:
+        path: the OpenAPI path template.
+    Returns:
+        The path with every {param} segment replaced by "x".
+    Raises:
+        None.
+    """
     return re.sub(r"\{[^{}]+\}", "x", path)
 
 
 def guarded_routes(app: FastAPI) -> list[tuple[str, str]]:
-    """Every (method, concrete path) the app serves, minus the shared public ops routes."""
+    """Every (method, concrete path) the app serves, minus the shared public ops
+    routes.
+
+    Args:
+        app: the FastAPI app whose routes are enumerated.
+    Returns:
+        Guarded routes as (HTTP method, concrete path) pairs.
+    Raises:
+        None.
+    """
     pairs = []
     for path, operations in app.openapi()["paths"].items():
         for method in operations:

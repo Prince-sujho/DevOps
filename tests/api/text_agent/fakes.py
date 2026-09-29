@@ -23,9 +23,20 @@ class RespondCall:
 
 
 class FakeOpenAIResponsesClient:
-    """Scriptable, recording stand-in for infra.llm.oai.responses.OpenAIResponsesClient."""
+    """Scriptable, recording stand-in for
+    infra.llm.oai.responses.OpenAIResponsesClient.
+    """
 
     def __init__(self) -> None:
+        """No calls recorded, no script queued, no default outcome.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
         self.calls: list[RespondCall] = []
         self.token_count_calls: list[Optional[str]] = []
         # Each entry is either a ChatTurn to return or an Exception to raise.
@@ -39,11 +50,31 @@ class FakeOpenAIResponsesClient:
         previous_response_id: Optional[str],
         input_message: Any,
     ) -> int:
+        """Record the call and return the scripted token count.
+
+        Args:
+            model: the model name (recorded, unused for the count).
+            previous_response_id: the prior response id, if continuing a turn.
+            input_message: the input being counted (unused for the count).
+        Returns:
+            The scripted token count.
+        Raises:
+            None.
+        """
         self.token_count_calls.append(previous_response_id)
         return self.next_tokens
 
     async def chat(self, **kwargs: Any) -> Any:
-        """Return (or raise) the next scripted outcome, recording the call."""
+        """Return (or raise) the next scripted outcome, recording the call.
+
+        Args:
+            kwargs: the call's kwargs (model/history/previous_response_id/etc).
+        Returns:
+            The next scripted outcome.
+        Raises:
+            AssertionError: no outcome was scripted.
+            Exception: the scripted outcome, if it's an exception.
+        """
         history = kwargs.get("history", kwargs.get("input_message", []))
         self.calls.append(
             RespondCall(
@@ -54,7 +85,9 @@ class FakeOpenAIResponsesClient:
         )
         outcome = self.script.pop(0) if self.script else self.default
         if outcome is None:
-            raise AssertionError("FakeOpenAIResponsesClient.chat called with no script")
+            raise AssertionError(
+                "FakeOpenAIResponsesClient.chat called with no script"
+            )
         if isinstance(outcome, BaseException):
             raise outcome
         if callable(outcome):
@@ -66,31 +99,88 @@ class FakeOpenAIImageClient:
     """Recording stand-in for infra.llm.oai.images.OpenAIImageClient."""
 
     def __init__(self) -> None:
+        """No calls recorded, no generate error scripted.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
         self.calls: list[tuple[str, str]] = []
         self.raise_on_generate: Optional[BaseException] = None
 
     async def generate(self, prompt: str) -> bytes:
+        """Record the call and return fake PNG bytes, or raise the scripted
+        error.
+
+        Args:
+            prompt: the image prompt.
+        Returns:
+            Fixed fake PNG bytes.
+        Raises:
+            BaseException: the scripted raise_on_generate error, if one was set.
+        """
         self.calls.append(("generate", prompt))
         if self.raise_on_generate is not None:
             raise self.raise_on_generate
         return b"fake-png-bytes"
 
     async def edit(self, prompt: str, source_images: list[Any]) -> bytes:
+        """Record the call and return fake PNG bytes.
+
+        Args:
+            prompt: the edit prompt.
+            source_images: the images being edited.
+        Returns:
+            Fixed fake PNG bytes.
+        Raises:
+            None.
+        """
         self.calls.append(("edit", prompt))
         return b"fake-png-bytes"
 
 
 class FakeEmbeddingClient:
-    """Recording stand-in for infra.llm.gemini.embeddings.GeminiEmbeddingClient."""
+    """Recording stand-in for infra.llm.gemini.embeddings.
+    GeminiEmbeddingClient."""
 
     def __init__(self) -> None:
+        """No calls recorded.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
         self.calls: list[str] = []
 
     async def embed_documents(self, parts: list[Any]) -> list[list[float]]:
+        """Record the call and return one zero vector per part.
+
+        Args:
+            parts: the document parts to embed.
+        Returns:
+            One zero vector per part.
+        Raises:
+            None.
+        """
         self.calls.append("embed_documents")
         return [[0.0, 0.0, 0.0] for _ in parts]
 
     async def embed_queries(self, parts: list[Any]) -> list[list[float]]:
+        """Record the call and return one zero vector per part.
+
+        Args:
+            parts: the query parts to embed.
+        Returns:
+            One zero vector per part.
+        Raises:
+            None.
+        """
         self.calls.append("embed_queries")
         return [[0.0, 0.0, 0.0] for _ in parts]
 
@@ -104,35 +194,85 @@ class GraphCall:
 
 
 class FakeGraphClient:
-    """Recording stand-in for infra.platform.graph.GraphClient with scriptable rows."""
+    """Recording stand-in for infra.platform.graph.GraphClient with scriptable
+    rows.
+    """
 
     def __init__(self) -> None:
+        """No calls recorded, not closed; the default responder returns no rows.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
         self.calls: list[GraphCall] = []
         self.closed = False
         # Callable(text, params) -> list[dict]; default returns no rows.
-        self.responder: Callable[[str, dict[str, Any]], list[dict[str, Any]]] = (
-            lambda text, params: []
-        )
+        self.responder: Callable[
+            [str, dict[str, Any]], list[dict[str, Any]]
+        ] = lambda text, params: []
 
     async def query(self, text: str, **params: Any) -> list[dict[str, Any]]:
+        """Record the call and return whatever the scripted responder returns
+        for it.
+
+        Args:
+            text: the Cypher query text.
+            params: query parameters.
+        Returns:
+            Whatever the scripted responder returns for (text, params).
+        Raises:
+            None.
+        """
         self.calls.append(GraphCall(text=text, params=dict(params)))
         return self.responder(text, params)
 
     async def close(self) -> None:
+        """Mark the client closed.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
         self.closed = True
 
 
 class FakeDocumentWorkerClient:
-    """Recording stand-in for infra.clients.document_worker.DocumentWorkerClient.
+    """Recording stand-in for
+    infra.clients.document_worker.DocumentWorkerClient.
 
     Never reached by the plain-text/success and negative-path tests in this
     suite: no scripted fake-LLM tool call requests document generation.
     """
 
     def __init__(self) -> None:
+        """No calls recorded.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
         self.calls: list[str] = []
 
     async def close(self) -> None:
+        """No-op close.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
         return None
 
 
@@ -148,17 +288,54 @@ class FakeUsersClient:
     """
 
     def __init__(self) -> None:
+        """No calls recorded.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
         self.calls: list[str] = []
 
     async def close(self) -> None:
+        """No-op close.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
         return None
 
     async def get_enrollment_ids(self, user_id: str):
+        """Always returns an empty enrollment-ids response; unused by this
+        suite's turns.
+
+        Args:
+            user_id: the user to look up (ignored).
+        Returns:
+            An empty EnrollmentIdsResponse.
+        Raises:
+            None.
+        """
         from infra.clients.users import EnrollmentIdsResponse
 
         return EnrollmentIdsResponse(teacherUserIds=[], studentUserIds=[])
 
     async def batch_get_users(self, user_ids: list[str]) -> list:
+        """Always returns an empty list; unused by this suite's turns.
+
+        Args:
+            user_ids: the users to look up (ignored).
+        Returns:
+            An empty list.
+        Raises:
+            None.
+        """
         return []
 
 
@@ -171,19 +348,68 @@ class FakeGcsBucket:
     """
 
     def __init__(self, bucket_name: str = "fake-bucket") -> None:
+        """An empty bucket under the given name.
+
+        Args:
+            bucket_name: the fake bucket name used in public_url.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
         self._bucket = bucket_name
         self.objects: dict[str, bytes] = {}
 
-    async def upload(self, object_name: str, data: bytes, content_type: str) -> None:
+    async def upload(
+        self, object_name: str, data: bytes, content_type: str
+    ) -> None:
+        """Store data under object_name in memory.
+
+        Args:
+            object_name: the object's storage path.
+            data: the bytes being stored.
+            content_type: unused; kept to match the real signature.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
         self.objects[object_name] = data
 
     async def download(self, object_name: str) -> bytes:
+        """Return the previously uploaded bytes for object_name.
+
+        Args:
+            object_name: object key whose stored bytes are returned.
+        Returns:
+            The bytes previously stored under object_name.
+        Raises:
+            None.
+        """
         return self.objects[object_name]
 
     def public_url(self, object_name: str) -> str:
+        """The fake public URL for object_name, in GcsBucket's real URL shape.
+
+        Args:
+            object_name: object key to build a public URL for.
+        Returns:
+            The fake GCS public URL for object_name in this bucket.
+        Raises:
+            None.
+        """
         return f"https://storage.googleapis.com/{self._bucket}/{object_name}"
 
     async def close(self) -> None:
+        """No-op close.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
         return None
 
 
@@ -191,10 +417,16 @@ class FakeGcsBucket:
 class Fakes:
     """Every fake wired into one text_agent test app, for scripting per test."""
 
-    openai: FakeOpenAIResponsesClient = field(default_factory=FakeOpenAIResponsesClient)
-    openai_images: FakeOpenAIImageClient = field(default_factory=FakeOpenAIImageClient)
+    openai: FakeOpenAIResponsesClient = field(
+        default_factory=FakeOpenAIResponsesClient
+    )
+    openai_images: FakeOpenAIImageClient = field(
+        default_factory=FakeOpenAIImageClient
+    )
     embeddings: FakeEmbeddingClient = field(default_factory=FakeEmbeddingClient)
     graph: FakeGraphClient = field(default_factory=FakeGraphClient)
-    documents: FakeDocumentWorkerClient = field(default_factory=FakeDocumentWorkerClient)
+    documents: FakeDocumentWorkerClient = field(
+        default_factory=FakeDocumentWorkerClient
+    )
     users: FakeUsersClient = field(default_factory=FakeUsersClient)
     bucket: FakeGcsBucket = field(default_factory=FakeGcsBucket)

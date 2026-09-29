@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# Local by default. --remote reads GitHub (no writes).
+#
+# Usage: see usage() below — ./verify-phase2.sh [--remote]
+# Arguments: --remote — also check the files actually on sujho/main.
+# Exit codes: 0 ok; 1 unknown argument, or (via die) remote verification found
+#   a failure.
 usage() {
   cat <<'EOF'
   ./verify-phase2.sh           # validate.py only
@@ -32,7 +38,9 @@ fi
 fail=0
 for entry in "${PHASE2_FILE_MAP[@]}"; do
   f="${entry%%:*}"
-  path="$(gh api "repos/${ORG}/${PHASE2_REPO}/contents/${f}?ref=main" --jq .path 2>/dev/null || true)"
+  path="$(
+    gh api "repos/${ORG}/${PHASE2_REPO}/contents/${f}?ref=main" --jq .path 2>/dev/null || true
+  )"
   if [ -z "$path" ]; then
     echo "FAIL ${PHASE2_REPO}: missing on main ${f}"
     fail=1
@@ -43,7 +51,11 @@ done
 
 body_of() {
   gh api "repos/${ORG}/${PHASE2_REPO}/contents/$1?ref=main" --jq .content 2>/dev/null \
-    | python3 -c 'import sys,base64; d=sys.stdin.read().replace("\n",""); print(base64.b64decode(d).decode() if d else "")'
+    | python3 -c '
+import sys, base64
+d = sys.stdin.read().replace("\n", "")
+print(base64.b64decode(d).decode() if d else "")
+'
 }
 
 build_body="$(body_of ci/build-deploy.yaml)"

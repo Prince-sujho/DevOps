@@ -42,7 +42,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          RUN_ID="$(gh run list --workflow "Weekly eval replay" --status completed --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+          RUN_ID="$(gh run list --workflow "Weekly eval replay" \
+            --status completed --limit 1 --json databaseId \
+            --jq '.[0].databaseId // empty')"
           [ -n "$RUN_ID" ] || exit 0
           gh run download "$RUN_ID" -n eval-result --dir /tmp/last-eval || exit 0
           if [ -f /tmp/last-eval/eval-history.json ]; then
@@ -109,8 +111,13 @@ jobs:
             let body = `<!-- phase3-eval -->\n### Weekly eval replay\n\n`;
             if (r.skipped) body += `Skipped: ${r.reason}\n`;
             if (r.fail_open) body += `Fail-open (spend/auth) — not a regression signal.\n`;
-            if (r.counts) body += `pass=${r.counts.pass || 0} fail=${r.counts.fail || 0} xfail=${r.counts.xfail || 0} xpass=${r.counts.xpass || 0}\n`;
-            if ((r.escalate || []).length) body += `Escalate (failed two weeks running): ${r.escalate.join(', ')}\n`;
+            if (r.counts) {
+              body += `pass=${r.counts.pass || 0} fail=${r.counts.fail || 0} `;
+              body += `xfail=${r.counts.xfail || 0} xpass=${r.counts.xpass || 0}\n`;
+            }
+            if ((r.escalate || []).length) {
+              body += `Escalate (failed two weeks running): ${r.escalate.join(', ')}\n`;
+            }
             if (r.flag_review) body += `\nNeeds a human look — not a CI failure.\n`;
             if (r.full_pass) body += `\nFull pass — no action needed, this is a report only.\n`;
             await github.rest.issues.createComment({

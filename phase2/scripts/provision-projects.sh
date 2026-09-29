@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Creates sujho-preprod + its warehouse. sujho-dev stays untouched, no IAM here.
 # Dry-run unless --apply. Fill ORG_ID / BILLING_ACCOUNT_ID first.
+#
+# Usage: ./provision-projects.sh [--apply]
+# Arguments: --apply — actually run the gcloud commands (default: print only).
+# Exit codes: 0 ok; 1 unknown argument, or ORG_ID/BILLING_ACCOUNT_ID unset
+#   or still a REPLACE_* placeholder.
 
 set -euo pipefail
 
@@ -35,7 +40,8 @@ run() {
   "$@"
 }
 
-if [[ "$ORG_ID" == *REPLACE* ]] || [[ "$BILLING_ACCOUNT_ID" == *REPLACE* ]] || [ -z "$ORG_ID" ] || [ -z "$BILLING_ACCOUNT_ID" ]; then
+if [[ "$ORG_ID" == *REPLACE* ]] || [ -z "$ORG_ID" ] \
+  || [[ "$BILLING_ACCOUNT_ID" == *REPLACE* ]] || [ -z "$BILLING_ACCOUNT_ID" ]; then
   die "ORG_ID and BILLING_ACCOUNT_ID must be real values, not placeholders"
 fi
 
@@ -72,7 +78,8 @@ enable_apis() {
 ensure_project "$PREPROD_PROJECT"
 enable_apis "$PREPROD_PROJECT"
 
-if [ "$APPLY" -eq 0 ] || ! gcloud artifacts repositories describe services --location="$REGION" --project="$PREPROD_PROJECT" >/dev/null 2>&1; then
+if [ "$APPLY" -eq 0 ] || ! gcloud artifacts repositories describe services \
+  --location="$REGION" --project="$PREPROD_PROJECT" >/dev/null 2>&1; then
   echo "Artifact Registry ${PREPROD_PROJECT}/services — the warehouse"
   run gcloud artifacts repositories create services \
     --repository-format=docker \

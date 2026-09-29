@@ -1,7 +1,8 @@
 """Meta webhook payload builders and the X-Hub-Signature-256 helper.
 
-Shapes mirror what `whatsapp_adapter/app/src/input/webhook.py::_normalize_message`
-and `_common_message_fields` actually read.
+Shapes mirror what
+`whatsapp_adapter/app/src/input/webhook.py::_normalize_message` and
+`_common_message_fields` actually read.
 """
 
 from __future__ import annotations
@@ -15,18 +16,43 @@ from . import constants as K
 
 
 def sign(raw_body: bytes, secret: str = K.WHATSAPP_APP_SECRET) -> str:
-    """Compute the Meta X-Hub-Signature-256 header value for one raw body."""
+    """Compute the Meta X-Hub-Signature-256 header value for one raw body.
+
+    Args:
+        raw_body: the exact bytes the signature covers.
+        secret: the app secret to sign with.
+    Returns:
+        The "sha256=..." header value.
+    Raises:
+        None.
+    """
     digest = hmac.new(secret.encode(), raw_body, hashlib.sha256).hexdigest()
     return f"sha256={digest}"
 
 
 def encode(payload: dict[str, Any]) -> bytes:
-    """Serialize one webhook payload to the exact bytes that will be signed."""
+    """Serialize one webhook payload to the exact bytes that will be signed.
+
+    Args:
+        payload: webhook payload serialized to the bytes that get signed.
+    Returns:
+        The JSON encoding of payload as bytes.
+    Raises:
+        None.
+    """
     return json.dumps(payload).encode()
 
 
 def _envelope(value: dict[str, Any]) -> dict[str, Any]:
-    """Wrap one messages 'value' block in the Meta entry/changes envelope."""
+    """Wrap one messages 'value' block in the Meta entry/changes envelope.
+
+    Args:
+        value: the messages value object placed inside the Meta envelope.
+    Returns:
+        A WhatsApp webhook envelope whose messages value is value.
+    Raises:
+        None.
+    """
     return {
         "object": "whatsapp_business_account",
         "entry": [
@@ -44,8 +70,22 @@ def _value(
     sender_phone: Optional[str],
     sender_id: str,
 ) -> dict[str, Any]:
-    """Build one messages value block with the contacts index the adapter reads."""
-    contact: dict[str, Any] = {"profile": {"name": profile_name}, "user_id": sender_id}
+    """Build one messages value block with the contacts index the adapter reads.
+
+    Args:
+        message: the raw message to attach.
+        profile_name: the sender's profile name.
+        sender_phone: the sender's phone, or None if hidden.
+        sender_id: the sender's WhatsApp user id.
+    Returns:
+        The value block.
+    Raises:
+        None.
+    """
+    contact: dict[str, Any] = {
+        "profile": {"name": profile_name},
+        "user_id": sender_id,
+    }
     if sender_phone is not None:
         contact["wa_id"] = sender_phone
     return {
@@ -60,12 +100,20 @@ def _value(
 
 
 def _message_base(
-    message_id: str,
-    sender_id: str,
-    sender_phone: Optional[str],
-    timestamp: str,
+    message_id: str, sender_id: str, sender_phone: Optional[str], timestamp: str
 ) -> dict[str, Any]:
-    """Common raw message fields; 'from' is omitted for a hidden number."""
+    """Common raw message fields; 'from' is omitted for a hidden number.
+
+    Args:
+        message_id: the message's wamid.
+        sender_id: the sender's WhatsApp user id.
+        sender_phone: the sender's phone, or None if hidden.
+        timestamp: the message's Unix timestamp string.
+    Returns:
+        The base message fields.
+    Raises:
+        None.
+    """
     base: dict[str, Any] = {
         "id": message_id,
         "from_user_id": sender_id,
@@ -85,7 +133,20 @@ def text_webhook(
     profile_name: str = "Test User",
     timestamp: str = "1750000000",
 ) -> dict[str, Any]:
-    """One inbound text message webhook."""
+    """One inbound text message webhook.
+
+    Args:
+        message_id: the message's wamid.
+        sender_id: the sender's WhatsApp user id.
+        sender_phone: the sender's phone, or None if hidden.
+        body: the text body.
+        profile_name: the sender's profile name.
+        timestamp: the message's Unix timestamp string.
+    Returns:
+        The webhook body.
+    Raises:
+        None.
+    """
     message = {
         **_message_base(message_id, sender_id, sender_phone, timestamp),
         "type": "text",
@@ -102,7 +163,19 @@ def malformed_text_webhook(
     profile_name: str = "Test User",
     timestamp: str = "1750000000",
 ) -> dict[str, Any]:
-    """A supported-shaped text message whose required 'text' block is absent."""
+    """A supported-shaped text message whose required 'text' block is absent.
+
+    Args:
+        message_id: the message's wamid.
+        sender_id: the sender's WhatsApp user id.
+        sender_phone: the sender's phone.
+        profile_name: the sender's profile name.
+        timestamp: the message's Unix timestamp string.
+    Returns:
+        The webhook body.
+    Raises:
+        None.
+    """
     message = {
         **_message_base(message_id, sender_id, sender_phone, timestamp),
         "type": "text",
@@ -118,7 +191,19 @@ def reaction_webhook(
     profile_name: str = "Test User",
     timestamp: str = "1750000000",
 ) -> dict[str, Any]:
-    """One inbound reaction: a WhatsApp type Sujho does not model as a turn."""
+    """One inbound reaction: a WhatsApp type Sujho does not model as a turn.
+
+    Args:
+        message_id: the message's wamid.
+        sender_id: the sender's WhatsApp user id.
+        sender_phone: the sender's phone.
+        profile_name: the sender's profile name.
+        timestamp: the message's Unix timestamp string.
+    Returns:
+        The webhook body.
+    Raises:
+        None.
+    """
     message = {
         **_message_base(message_id, sender_id, sender_phone, timestamp),
         "type": "reaction",
@@ -140,12 +225,24 @@ def unrecognized_type_webhook(
 
     `"order"` is a real Meta WhatsApp Business message type (a catalog order)
     that `_normalize_message` does not name in any case arm -- unlike
-    `"reaction"` (see `reaction_webhook`), which the code deliberately drops
-    and returns `None` for, this falls to the wildcard arm and becomes an
+    `"reaction"` (see `reaction_webhook`), which the code deliberately drops and
+    returns `None` for, this falls to the wildcard arm and becomes an
     `UnsupportedMessage` that runs one full agent turn via
     `AgentInputBuilder.unsupported()`. This is the case the README's Test
     Matrix "Unsupported message type -> Ignore and return 200" row is
     actually describing (see tests/outcomes/UNCERTAINTY.md Journey 12).
+
+    Args:
+        message_id: the message's wamid.
+        sender_id: the sender's WhatsApp user id.
+        sender_phone: the sender's phone.
+        profile_name: the sender's profile name.
+        timestamp: the message's Unix timestamp string.
+        message_type: the unrecognized Meta type string.
+    Returns:
+        The webhook body.
+    Raises:
+        None.
     """
     message = {
         **_message_base(message_id, sender_id, sender_phone, timestamp),
@@ -164,7 +261,21 @@ def button_reply_webhook(
     profile_name: str = "Test User",
     timestamp: str = "1750000000",
 ) -> dict[str, Any]:
-    """One tap on a reply button."""
+    """One tap on a reply button.
+
+    Args:
+        message_id: the message's wamid.
+        sender_id: the sender's WhatsApp user id.
+        sender_phone: the sender's phone, or None if hidden.
+        reply_id: the tapped button's id.
+        title: the tapped button's title.
+        profile_name: the sender's profile name.
+        timestamp: the message's Unix timestamp string.
+    Returns:
+        The webhook body.
+    Raises:
+        None.
+    """
     message = {
         **_message_base(message_id, sender_id, sender_phone, timestamp),
         "type": "interactive",
@@ -187,7 +298,22 @@ def location_webhook(
     profile_name: str = "Test User",
     timestamp: str = "1750000000",
 ) -> dict[str, Any]:
-    """One inbound location share."""
+    """One inbound location share.
+
+    Args:
+        message_id: the message's wamid.
+        sender_id: the sender's WhatsApp user id.
+        sender_phone: the sender's phone.
+        latitude: the shared latitude.
+        longitude: the shared longitude.
+        address: the shared address text, or None.
+        profile_name: the sender's profile name.
+        timestamp: the message's Unix timestamp string.
+    Returns:
+        The webhook body.
+    Raises:
+        None.
+    """
     location: dict[str, Any] = {"latitude": latitude, "longitude": longitude}
     if address is not None:
         location["address"] = address
@@ -209,15 +335,34 @@ def contacts_webhook(
     profile_name: str = "Test User",
     timestamp: str = "1750000000",
 ) -> dict[str, Any]:
-    """One requested phone share (origin 'contact_request') or forwarded card."""
+    """One requested phone share (origin 'contact_request') or forwarded card.
+
+    Args:
+        message_id: the message's wamid.
+        sender_id: the sender's WhatsApp user id.
+        sender_phone: the sender's phone, or None if hidden.
+        origin: how the contact reached the adapter.
+        shared_phone: the shared contact's phone number.
+        profile_name: the sender's profile name.
+        timestamp: the message's Unix timestamp string.
+    Returns:
+        The webhook body.
+    Raises:
+        None.
+    """
     message = {
         **_message_base(message_id, sender_id, sender_phone, timestamp),
         "type": "contacts",
         "contacts": [
             {
                 "origin": origin,
-                "name": {"formatted_name": profile_name, "first_name": profile_name},
-                "phones": [{"phone": f"+{shared_phone}", "wa_id": shared_phone}],
+                "name": {
+                    "formatted_name": profile_name,
+                    "first_name": profile_name,
+                },
+                "phones": [
+                    {"phone": f"+{shared_phone}", "wa_id": shared_phone}
+                ],
             }
         ],
     }
@@ -233,7 +378,20 @@ def flow_completion_webhook(
     profile_name: str = "Test User",
     timestamp: str = "1750000000",
 ) -> dict[str, Any]:
-    """One Flow completion delivered as an interactive nfm_reply."""
+    """One Flow completion delivered as an interactive nfm_reply.
+
+    Args:
+        message_id: the message's wamid.
+        sender_id: the sender's WhatsApp user id.
+        sender_phone: the sender's phone, or None if hidden.
+        response_json: the Flow's completion payload.
+        profile_name: the sender's profile name.
+        timestamp: the message's Unix timestamp string.
+    Returns:
+        The webhook body.
+    Raises:
+        None.
+    """
     message = {
         **_message_base(message_id, sender_id, sender_phone, timestamp),
         "type": "interactive",
@@ -256,14 +414,28 @@ def student_onboarding_completion(
     grade: str = "9",
     subjects: Optional[list[str]] = None,
 ) -> dict[str, Any]:
-    """The completion payload the student onboarding Flow's terminal screen sends."""
+    """The completion payload the student onboarding Flow's terminal screen
+    sends.
+
+    Args:
+        institution: the selected school's name.
+        institution_id: the selected school's id.
+        grade: the student's grade.
+        subjects: enrolled subjects, or None for the default.
+    Returns:
+        The completion payload.
+    Raises:
+        None.
+    """
     return {
         "flow_token": K.ONBOARDING_FLOW_TOKEN,
         "persona": "student",
         "institution": institution,
         "institutionId": institution_id,
         "grade": grade,
-        "subjects": subjects if subjects is not None else ["mathematics", "science"],
+        "subjects": subjects
+        if subjects is not None
+        else ["mathematics", "science"],
     }
 
 
@@ -274,7 +446,19 @@ def teacher_onboarding_completion(
     grades: Optional[list[str]] = None,
     subjects: Optional[list[str]] = None,
 ) -> dict[str, Any]:
-    """The completion payload the teacher onboarding Flow's terminal screen sends."""
+    """The completion payload the teacher onboarding Flow's terminal screen
+    sends.
+
+    Args:
+        institution: the selected school's name.
+        institution_id: the selected school's id.
+        grades: taught grades, or None for the default.
+        subjects: taught subjects, or None for the default.
+    Returns:
+        The completion payload.
+    Raises:
+        None.
+    """
     return {
         "flow_token": K.ONBOARDING_FLOW_TOKEN,
         "persona": "teacher",

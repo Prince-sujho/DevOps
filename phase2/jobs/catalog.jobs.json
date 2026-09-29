@@ -5,7 +5,6 @@
     "knowledge-store": {
       "image": "knowledge-store-jobs",
       "dockerfile": "knowledge_store/Dockerfile",
-      "gitlinks": ["knowledge_store", "infra"],
       "runtime_sa": "knowledge-store-run",
       "cpu": "2",
       "task_timeout": "24h",

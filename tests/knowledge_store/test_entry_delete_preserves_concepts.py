@@ -1,9 +1,10 @@
 """Deleting an entry never deletes the concepts it covered.
 
 Oracle: knowledge_store/graph/builder.py — "Concepts are subject-owned (no
-entry_id) and reaped only by GC." infra.knowledge.queries.writer.DELETE_ENTRY_NODES
-matches only entry-owned nodes, so removing one textbook must not erase a
-concept a second textbook also covers.
+entry_id) and reaped only by GC."
+infra.knowledge.queries.writer.DELETE_ENTRY_NODES matches only entry-owned
+nodes, so removing one textbook must not erase a concept a second textbook also
+covers.
 """
 
 from __future__ import annotations
@@ -18,7 +19,19 @@ from .conftest import node_props
 pytestmark = pytest.mark.asyncio
 
 
-async def test_deleting_an_entry_removes_its_nodes_but_leaves_the_concept_it_covered(graph):
+async def test_deleting_an_entry_removes_its_nodes_but_leaves_the_concept_it_covered(
+    graph,
+):
+    """Deleting an entry removes its Book/Chapter nodes but leaves the Concept
+    it covered.
+
+    Args:
+        graph: the wiped-clean session GraphClient.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
     rows = GraphRows()
     rows.node("Book", "entry-1", {"title": "Book", "entry_id": "entry-1"})
     rows.node("Chapter", "ch-1", {"name": "Chapter", "entry_id": "entry-1"})

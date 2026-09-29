@@ -5,7 +5,6 @@
 substitutions:
   _SERVICE_NAME: ""
   _DOCKERFILE: ""
-  _GITLINKS: ""
   _PRE_BUILD_DIR: ""
   _CPU: "1"
   _MEMORY: "512Mi"
@@ -43,18 +42,6 @@ steps:
         git fetch --depth=1 origin "${_COMMIT_SHA}"
         git checkout --force "${_COMMIT_SHA}"
 
-  # bash entrypoint so $_GITLINKS word-splits into separate --paths args
-  - id: fetch-gitlinks
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
-    entrypoint: bash
-    args:
-      - -c
-      - |
-        set -euo pipefail
-        python3 ci/checkout-gitlinks.py --root=. --paths $_GITLINKS \
-          --project="${_TARGET_PROJECT}" --region="${_REGION}" --connection="${_DC_CONNECTION}"
-    waitFor: ["fetch-sujho"]
-
   # baseline for semgrep/mypy = whatever's live now, read off the revision's
   # own env var, not an unverified annotation value
   - id: resolve-baseline
@@ -81,21 +68,10 @@ steps:
         git cat-file -e "$BASE_SHA^{commit}"
         echo "$BASE_SHA" > /workspace/.baseline_sha
         echo "baseline commit: $BASE_SHA"
-        # The mypy ratchet must count the same trees on both sides: the baseline
-        # commit with its own pinned service + infra checkouts, just as HEAD has
-        # them. Built on a volume, not in /workspace, so ruff/mypy/semgrep on
-        # HEAD never scan it. A gitlink the baseline predates is skipped.
+        # The mypy ratchet must count the same tree on both sides: the baseline
+        # commit's own worktree, just as HEAD has it. Built on a volume, not in
+        # /workspace, so ruff/mypy/semgrep on HEAD never scan it.
         git worktree add --detach /baseline "$BASE_SHA"
-        BASE_PATHS=""
-        for p in $_GITLINKS; do
-          if git -C /baseline ls-tree HEAD -- "$p" | grep -q '^160000'; then
-            BASE_PATHS="$BASE_PATHS $p"
-          fi
-        done
-        if [ -n "$BASE_PATHS" ]; then
-          python3 ci/checkout-gitlinks.py --root=/baseline --paths $BASE_PATHS \
-            --project="${_TARGET_PROJECT}" --region="${_REGION}" --connection="${_DC_CONNECTION}"
-        fi
     volumes:
       - name: baseline
         path: /baseline
@@ -113,31 +89,15 @@ steps:
         apt-get update -qq && apt-get install -y -qq git >/dev/null
         pip install --quiet ruff mypy semgrep detect-secrets
         ruff check .
-        python3 ci/gates/mypy_ratchet.py --baseline-sha "$(cat /workspace/.baseline_sha)" --baseline-root /baseline
+        python3 ci/gates/mypy_ratchet.py \
+          --baseline-sha "$(cat /workspace/.baseline_sha)" \
+          --baseline-root /baseline
         semgrep scan --config=auto --error --baseline-commit "$(cat /workspace/.baseline_sha)"
         detect-secrets-hook --baseline tests/ci/.secrets.baseline $(git ls-files)
     volumes:
       - name: baseline
         path: /baseline
-    waitFor: ["fetch-gitlinks", "resolve-baseline"]
-
-  # gate 2 imports every service (the cross-service contract is the point,
-  # decision 12), but fetch-gitlinks only fetched the one being deployed.
-  # Fetch the rest here, derived from services.json + the jobs catalog so a new
-  # service is picked up with no edit. After gate-1, so static checks still
-  # see only the service being deployed. The image build copies only its own
-  # Dockerfile paths, so these extra checkouts never reach the image.
-  - id: fetch-test-gitlinks
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
-    entrypoint: bash
-    args:
-      - -c
-      - |
-        set -euo pipefail
-        TEST_GITLINKS="$(python3 -c 'import json; s = json.load(open("ci/services.json")); j = json.load(open("jobs/catalog.jobs.json")); print(" ".join(sorted({g for c in s.values() for g in c["gitlinks"]} | {g for c in j["image_groups"].values() for g in c["gitlinks"]})))')"
-        python3 ci/checkout-gitlinks.py --root=. --paths $TEST_GITLINKS \
-          --project="${_TARGET_PROJECT}" --region="${_REGION}" --connection="${_DC_CONNECTION}"
-    waitFor: ["gate-1-static"]
+    waitFor: ["fetch-sujho", "resolve-baseline"]
 
   # gate 2: the 65 kept tests, plus knowledge_store's 9 pure-logic additions,
   # against a Firestore emulator. tests/knowledge_store's other 10 tests (real
@@ -173,7 +133,9 @@ steps:
         gcloud components install cloud-firestore-emulator --quiet
         # each app imports its own deps at import time (dotenv, segno, ...)
         pip install --quiet -e ./infra -r tests/requirements.txt \
-          $(for f in */requirements.txt */app/requirements.txt; do [ -f "$f" ] && printf -- "-r %s " "$f"; done)
+          $(for f in */requirements.txt */app/requirements.txt; do \
+            [ -f "$f" ] && printf -- "-r %s " "$f"; \
+          done)
 
         pytest -q \
           tests/api/user_service/test_auth_boundary.py \
@@ -193,7 +155,7 @@ steps:
         pytest -q tests/integration
 
         pytest -q tests/e2e/test_idempotency.py tests/e2e/test_webhook_signature.py
-    waitFor: ["fetch-test-gitlinks"]
+    waitFor: ["gate-1-static"]
 
   # gate 3: suite guardrails — assertions real, count hasn't dropped.
   # check_test_count runs `pytest --collect-only`, which imports every suite:
@@ -206,7 +168,9 @@ steps:
       - |
         set -euo pipefail
         pip install --quiet -e ./infra -r tests/requirements.txt \
-          $(for f in */requirements.txt */app/requirements.txt; do [ -f "$f" ] && printf -- "-r %s " "$f"; done)
+          $(for f in */requirements.txt */app/requirements.txt; do \
+            [ -f "$f" ] && printf -- "-r %s " "$f"; \
+          done)
         python3 tests/tooling/check_assertions.py
         python3 tests/tooling/check_test_count.py
     waitFor: ["gate-2-invariants"]

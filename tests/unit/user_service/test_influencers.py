@@ -1,4 +1,5 @@
-"""Influencer campaign spend: base fee plus a capped, stepwise per-block incentive.
+"""Influencer campaign spend: base fee plus a capped, stepwise per-block
+incentive.
 
 Oracle: user_service influencers._campaign_spend docstring. The README gives
 the inputs but no formula, so only the bounds are independently statable.
@@ -24,7 +25,25 @@ from user_service.app.src.influencers import _campaign_spend
 def test_spend_never_below_base_and_never_above_base_plus_cap(
     base: int, per_block: int, block_size: int, cap: int, onboards: int
 ) -> None:
-    """Invariants only, deliberately not a reimplementation of the block arithmetic."""
-    terms = Payout(baseInr=base, perBlockInr=per_block, blockSize=block_size, incentiveCapInr=cap)
+    """Invariants only, deliberately not a reimplementation of the block
+    arithmetic.
+
+    Args:
+        base: hypothesis-generated base fee in rupees.
+        per_block: hypothesis-generated per-block incentive in rupees.
+        block_size: hypothesis-generated onboards per incentive block.
+        cap: hypothesis-generated incentive cap in rupees.
+        onboards: hypothesis-generated onboard count.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
+    terms = Payout(
+        baseInr=base,
+        perBlockInr=per_block,
+        blockSize=block_size,
+        incentiveCapInr=cap,
+    )
     spend = _campaign_spend(terms, onboards)
     assert base <= spend <= base + cap

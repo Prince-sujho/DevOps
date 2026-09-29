@@ -6,7 +6,7 @@ substitutions:
   _JOB_ID: ""
   _DOCKERFILE: ""
   _IMAGE: ""
-  _GITLINKS: ""
+  _PACKAGE: ""
   _RUNTIME_SA: ""
   _CPU: "1"
   _MEMORY: "512Mi"
@@ -46,17 +46,6 @@ steps:
         git fetch --depth=1 origin "${_COMMIT_SHA}"
         git checkout --force "${_COMMIT_SHA}"
 
-  - id: fetch-gitlinks
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
-    entrypoint: bash
-    args:
-      - -c
-      - |
-        set -euo pipefail
-        python3 ci/checkout-gitlinks.py --root=. --paths $_GITLINKS \
-          --project="${_TARGET_PROJECT}" --region="${_REGION}" --connection="${_DC_CONNECTION}"
-    waitFor: ["fetch-sujho"]
-
   # renamed/missing entry file fails here, not at run time with "module not found"
   - id: check-entry-file-exists
     name: python:3.12-slim
@@ -70,7 +59,7 @@ steps:
           exit 1
         fi
         echo "ok: ${_ENTRY_FILE} exists, runs as python -m ${_ENTRY_MODULE}"
-    waitFor: ["fetch-gitlinks"]
+    waitFor: ["fetch-sujho"]
 
   # same baselining rule as the service recipe — against what's currently
   # deployed, not a PR merge-base
@@ -98,21 +87,10 @@ steps:
         git cat-file -e "$BASE_SHA^{commit}"
         echo "$BASE_SHA" > /workspace/.baseline_sha
         echo "baseline commit: $BASE_SHA"
-        # The mypy ratchet must count the same trees on both sides: the baseline
-        # commit with its own pinned package + infra checkouts, just as HEAD has
-        # them. Built on a volume, not in /workspace, so ruff/mypy/semgrep on
-        # HEAD never scan it. A gitlink the baseline predates is skipped.
+        # The mypy ratchet must count the same tree on both sides: the baseline
+        # commit's own worktree, just as HEAD has it. Built on a volume, not in
+        # /workspace, so ruff/mypy/semgrep on HEAD never scan it.
         git worktree add --detach /baseline "$BASE_SHA"
-        BASE_PATHS=""
-        for p in $_GITLINKS; do
-          if git -C /baseline ls-tree HEAD -- "$p" | grep -q '^160000'; then
-            BASE_PATHS="$BASE_PATHS $p"
-          fi
-        done
-        if [ -n "$BASE_PATHS" ]; then
-          python3 ci/checkout-gitlinks.py --root=/baseline --paths $BASE_PATHS \
-            --project="${_TARGET_PROJECT}" --region="${_REGION}" --connection="${_DC_CONNECTION}"
-        fi
     volumes:
       - name: baseline
         path: /baseline
@@ -130,29 +108,15 @@ steps:
         apt-get update -qq && apt-get install -y -qq git >/dev/null
         pip install --quiet ruff mypy semgrep detect-secrets
         ruff check .
-        python3 ci/gates/mypy_ratchet.py --baseline-sha "$(cat /workspace/.baseline_sha)" --baseline-root /baseline
+        python3 ci/gates/mypy_ratchet.py \
+          --baseline-sha "$(cat /workspace/.baseline_sha)" \
+          --baseline-root /baseline
         semgrep scan --config=auto --error --baseline-commit "$(cat /workspace/.baseline_sha)"
         detect-secrets-hook --baseline tests/ci/.secrets.baseline $(git ls-files)
     volumes:
       - name: baseline
         path: /baseline
     waitFor: ["check-entry-file-exists", "resolve-baseline"]
-
-  # gate 3's collected-test count imports every suite, but fetch-gitlinks only
-  # fetched this job's package. Same derivation as the service recipe. After
-  # gate-1, so static checks still see only this job's package; the image
-  # build copies only its own Dockerfile paths.
-  - id: fetch-test-gitlinks
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
-    entrypoint: bash
-    args:
-      - -c
-      - |
-        set -euo pipefail
-        TEST_GITLINKS="$(python3 -c 'import json; s = json.load(open("ci/services.json")); j = json.load(open("jobs/catalog.jobs.json")); print(" ".join(sorted({g for c in s.values() for g in c["gitlinks"]} | {g for c in j["image_groups"].values() for g in c["gitlinks"]})))')"
-        python3 ci/checkout-gitlinks.py --root=. --paths $TEST_GITLINKS \
-          --project="${_TARGET_PROJECT}" --region="${_REGION}" --connection="${_DC_CONNECTION}"
-    waitFor: ["gate-1-static"]
 
   # knowledge_store's 9 pure-logic tests run here (verified passing). Its
   # other 10 (real Neo4j via Docker) are verified passing locally too, but
@@ -166,8 +130,9 @@ steps:
       - -c
       - |
         set -euo pipefail
-        if echo "${_GITLINKS}" | grep -qw "knowledge_store"; then
-          pip install --quiet -e ./infra -r tests/requirements.txt -r knowledge_store/requirements.txt
+        if [ "${_PACKAGE}" = "knowledge_store" ]; then
+          pip install --quiet -e ./infra -r tests/requirements.txt \
+            -r knowledge_store/requirements.txt
           pytest -q \
             tests/unit/infra/test_catalog_job_args.py \
             tests/unit/knowledge_store/test_graph_ids.py \
@@ -175,7 +140,7 @@ steps:
         else
           echo "no invariant tests exist for this job's package yet — known gap, not run"
         fi
-    waitFor: ["fetch-test-gitlinks"]
+    waitFor: ["gate-1-static"]
 
   # check_test_count runs `pytest --collect-only` over every suite: a fresh
   # container needs pytest and every app's deps.
@@ -187,7 +152,9 @@ steps:
       - |
         set -euo pipefail
         pip install --quiet -e ./infra -r tests/requirements.txt \
-          $(for f in */requirements.txt */app/requirements.txt; do [ -f "$f" ] && printf -- "-r %s " "$f"; done)
+          $(for f in */requirements.txt */app/requirements.txt; do \
+            [ -f "$f" ] && printf -- "-r %s " "$f"; \
+          done)
         python3 tests/tooling/check_assertions.py
         python3 tests/tooling/check_test_count.py
     waitFor: ["gate-2-invariants"]
@@ -234,8 +201,11 @@ steps:
         fi
         SCHED_NAME="${_JOB_ID}-schedule"
         SA="scheduler-invoker@${_TARGET_PROJECT}.iam.gserviceaccount.com"
-        URI="https://${_REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${_TARGET_PROJECT}/jobs/${_JOB_ID}:run"
-        if gcloud scheduler jobs describe "$SCHED_NAME" --project="${_TARGET_PROJECT}" --location="${_REGION}" >/dev/null 2>&1; then
+        BASE="https://${_REGION}-run.googleapis.com/apis/run.googleapis.com/v1"
+        URI="${BASE}/namespaces/${_TARGET_PROJECT}/jobs/${_JOB_ID}:run"
+        if gcloud scheduler jobs describe "$SCHED_NAME" \
+          --project="${_TARGET_PROJECT}" --location="${_REGION}" \
+          >/dev/null 2>&1; then
           gcloud scheduler jobs update http "$SCHED_NAME" \
             --project="${_TARGET_PROJECT}" --location="${_REGION}" \
             --schedule="${_SCHEDULE}" --uri="$URI" --http-method=POST \

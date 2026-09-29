@@ -1,4 +1,9 @@
-# Phase 3 extras. Source after phase1/lib.sh.
+# Phase 3 extras.
+#
+# Usage: source after phase1/lib.sh — `source "$(dirname "$0")/lib.sh"`.
+# Arguments: none; this file only declares constants.
+# Exit codes: none of its own — die() and its error conventions come from
+#   phase1/lib.sh, which must already be sourced.
 #
 # Mutation and eval both run from the sujho umbrella: mutmut via
 # tests/ci/pipeline.py, eval via Eval-Suite/run.py. Not a merge gate.

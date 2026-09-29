@@ -92,12 +92,10 @@ jobs:
             exit 1
           fi
           RUN_ARGS="$(echo "$CFG" | jq -r '.run_args | join(" ")')"
-          GITLINKS="$(echo "$CFG" | jq -r '.gitlinks | join(" ")')"
 
-          # one quoted string: values with spaces (_GITLINKS, _RUN_ARGS) stay one substitution
+          # one quoted string: values with spaces (_RUN_ARGS) stay one substitution
           SUBS="_SERVICE_NAME=$SERVICE"
           SUBS+=",_DOCKERFILE=$(echo "$CFG" | jq -r .dockerfile)"
-          SUBS+=",_GITLINKS=$GITLINKS"
           SUBS+=",_PRE_BUILD_DIR=$(echo "$CFG" | jq -r '.pre_build_dir // ""')"
           SUBS+=",_CPU=$(echo "$CFG" | jq -r '.cpu // "1"')"
           SUBS+=",_MEMORY=$(echo "$CFG" | jq -r '.memory // "512Mi"')"

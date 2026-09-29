@@ -4,6 +4,7 @@
 Tags like @v4 move. Pins do not. Re-run after changing action-pins.json.
 Skips Cloud Build YAML under phase2/ci/.
 """
+
 from __future__ import annotations
 
 import json
@@ -23,12 +24,43 @@ SKIP_DIRS = {ROOT / "phase2" / "ci"}
 
 
 def pin_comment(name: str) -> str:
+    """The full uses: value for name, pinned to its recorded SHA with the tag as
+    a comment.
+
+    Args:
+        name: action name (owner/repo) to look up in the pin table.
+    Returns:
+        The action name, its pinned SHA, and the tag as a comment.
+    Raises:
+        None.
+    """
     pin = PINS[name]
     return f"{name}@{pin['sha']} # {pin['tag']}"
 
 
 def pin_text(text: str) -> str:
+    """Replace every pinnable uses: line in text with its full-SHA pin.
+
+    Args:
+        text: workflow file text whose uses: lines are rewritten.
+    Returns:
+        text with every pinnable uses: line replaced by its SHA pin.
+    Raises:
+        None.
+    """
+
     def repl(match: re.Match[str]) -> str:
+        """Replace one matched uses: line with its pin, or leave it untouched if
+        unpinned.
+
+        Args:
+            match: one uses: line matched by USES_RE.
+        Returns:
+            The original matched text when the action is not pinned, otherwise
+            the line prefix plus the SHA pin.
+        Raises:
+            None.
+        """
         name = match.group("name")
         if name not in PINS:
             return match.group(0)
@@ -38,6 +70,16 @@ def pin_text(text: str) -> str:
 
 
 def should_skip(path: Path) -> bool:
+    """True for non-workflow files and anything under a skipped directory (Cloud
+    Build YAML).
+
+    Args:
+        path: the file to check.
+    Returns:
+        Whether pin_text should skip this file.
+    Raises:
+        None.
+    """
     if path.suffix not in {".yml", ".yaml"}:
         return True
     for skip in SKIP_DIRS:
@@ -50,6 +92,15 @@ def should_skip(path: Path) -> bool:
 
 
 def iter_workflow_files() -> list[Path]:
+    """Every workflow file under ROOT that isn't skipped, sorted.
+
+    Args:
+        None.
+    Returns:
+        The collected paths, sorted.
+    Raises:
+        None.
+    """
     out = []
     for path in ROOT.rglob("*"):
         if should_skip(path):
@@ -59,6 +110,16 @@ def iter_workflow_files() -> list[Path]:
 
 
 def main() -> None:
+    """Pin every uses: line in every workflow file that changed, printing which
+    ones touched.
+
+    Args:
+        None.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
     for path in iter_workflow_files():
         before = path.read_text()
         after = pin_text(before)

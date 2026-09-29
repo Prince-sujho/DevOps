@@ -74,7 +74,8 @@ jobs:
           DIGEST="$(gcloud artifacts docker images describe \
             "$REGISTRY/$SERVICE:sha-$SHORT" --format='value(image_summary.digest)' || true)"
           if [ -z "$DIGEST" ]; then
-            echo "Refuse: $REGISTRY/$SERVICE:sha-$SHORT does not exist. Nothing was tested to promote."
+            echo "Refuse: $REGISTRY/$SERVICE:sha-$SHORT" \
+              "does not exist. Nothing was tested to promote."
             exit 1
           fi
 
@@ -105,7 +106,7 @@ jobs:
           CFG="$(jq -r --arg s "$SERVICE" '.[$s]' ci/services.json)"
           RUN_ARGS="$(echo "$CFG" | jq -r '.run_args | join(" ")')"
 
-          # one quoted string: values with spaces (_GITLINKS, _RUN_ARGS) stay one substitution
+          # one quoted string: values with spaces (_RUN_ARGS) stay one substitution
           SUBS="_SERVICE_NAME=$SERVICE"
           SUBS+=",_CPU=$(echo "$CFG" | jq -r '.cpu // "1"')"
           SUBS+=",_MEMORY=$(echo "$CFG" | jq -r '.memory // "512Mi"')"

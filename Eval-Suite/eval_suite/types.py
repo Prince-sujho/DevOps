@@ -6,7 +6,13 @@ import re
 from datetime import date
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, BeforeValidator, Field, PlainSerializer, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    Field,
+    PlainSerializer,
+    model_validator,
+)
 
 Modality = Literal[
     "text",
@@ -49,10 +55,28 @@ EvalUserId = Literal[
 
 
 def _compile(value: str | re.Pattern[str]) -> re.Pattern[str]:
+    """value as a compiled pattern, compiling it if it's still a plain string.
+
+    Args:
+        value: a regex string, or an already-compiled pattern.
+    Returns:
+        The compiled pattern.
+    Raises:
+        re.error: value is a string that isn't a valid regex.
+    """
     return value if isinstance(value, re.Pattern) else re.compile(value)
 
 
 def _compile_all(values: list[str | re.Pattern[str]]) -> list[re.Pattern[str]]:
+    """Every value compiled via _compile.
+
+    Args:
+        values: regex strings and/or already-compiled patterns.
+    Returns:
+        The compiled patterns, in order.
+    Raises:
+        re.error: any value is a string that isn't a valid regex.
+    """
     return [_compile(value) for value in values]
 
 
@@ -68,6 +92,16 @@ class Attachments(BaseModel):
 
     @model_validator(mode="after")
     def _contains_is_live(self) -> Attachments:
+        """Enforce that a contains-pattern check is only meaningful on a live
+        attachment.
+
+        Args:
+            None.
+        Returns:
+            self, unchanged.
+        Raises:
+            ValueError: contains is set but live is False.
+        """
         if self.contains and not self.live:
             raise ValueError("attachment contains requires live=True")
         return self
@@ -81,9 +115,22 @@ class Stack(BaseModel):
 
     @model_validator(mode="after")
     def _coherent(self) -> Stack:
-        overlap = (set(self.tools_any) | set(self.tools_all)) & set(self.tools_none)
+        """Enforce that no tool is both required (any/all) and forbidden.
+
+        Args:
+            None.
+        Returns:
+            self, unchanged.
+        Raises:
+            ValueError: a tool appears in tools_none and in tools_any/tools_all.
+        """
+        overlap = (set(self.tools_any) | set(self.tools_all)) & set(
+            self.tools_none
+        )
         if overlap:
-            raise ValueError(f"tool both required and forbidden: {sorted(overlap)}")
+            raise ValueError(
+                f"tool both required and forbidden: {sorted(overlap)}"
+            )
         return self
 
 
@@ -103,11 +150,28 @@ class Expect(BaseModel):
 
     @model_validator(mode="after")
     def _coherent(self) -> Expect:
+        """Enforce Expect's internal consistency rules.
+
+        Args:
+            None.
+        Returns:
+            self, unchanged.
+        Raises:
+            ValueError: a modality is both required and forbidden, attachments
+                are required while document/image are forbidden modalities, or
+                word_count_min exceeds word_count_max.
+        """
         overlap = set(self.modalities_any) & set(self.modalities_none)
         if overlap:
-            raise ValueError(f"modality both required and forbidden: {sorted(overlap)}")
-        if self.attachments and {"document", "image"} & set(self.modalities_none):
-            raise ValueError("attachments required while document/image forbidden")
+            raise ValueError(
+                f"modality both required and forbidden: {sorted(overlap)}"
+            )
+        if self.attachments and {"document", "image"} & set(
+            self.modalities_none
+        ):
+            raise ValueError(
+                "attachments required while document/image forbidden"
+            )
         if (
             self.word_count_min is not None
             and self.word_count_max is not None
@@ -117,6 +181,16 @@ class Expect(BaseModel):
         return self
 
     def hard_armed(self) -> bool:
+        """Whether this Expect actually asserts anything hard.
+
+        Args:
+            None.
+        Returns:
+            True if any hard-checkable field is set (modality, attachment,
+            script, word count, stack, or hard text pattern).
+        Raises:
+            None.
+        """
         return bool(
             self.modalities_any
             or self.modalities_none
@@ -158,6 +232,17 @@ class EvalCase(BaseModel):
 
     @model_validator(mode="after")
     def _armed(self) -> EvalCase:
+        """Enforce that every case actually asserts something, unless it's
+        profile_unchanged-only.
+
+        Args:
+            None.
+        Returns:
+            self, unchanged.
+        Raises:
+            ValueError: profile_unchanged is False and no turn has a hard
+                Expect.
+        """
         if self.profile_unchanged:
             return self
         if not any(turn.expect.hard_armed() for turn in self.turns):

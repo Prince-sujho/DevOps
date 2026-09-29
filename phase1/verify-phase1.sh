@@ -2,11 +2,16 @@
 # Local by default. --remote reads GitHub (no writes).
 # Remote CODEOWNERS is judged by validate.py --check-stdin, the same rules
 # as the local test suite.
+#
+# Usage: see usage() below — ./verify-phase1.sh [--remote]
+# Arguments: --remote — also check GitHub (read-only); default is local-only.
+# Exit codes: 0 ok; 1 unknown argument, or (via die) remote verification found
+#   a failure.
 
 usage() {
   cat <<'EOF'
   ./verify-phase1.sh           # validate.py only (no GitHub)
-  ./verify-phase1.sh --remote  # CODEOWNERS + main ruleset + no extra branch rulesets
+  ./verify-phase1.sh --remote  # CODEOWNERS + main + branch-naming rulesets, no extra branch rulesets
 EOF
 }
 
@@ -37,6 +42,58 @@ ruleset_id() {
   local repo="$1" ruleset_name="$2"
   gh api "repos/${ORG}/${repo}/rulesets" --jq \
     ".[] | select(.name==\"${ruleset_name}\") | .id" | head -n1
+}
+
+# Compares a live ruleset against the local JSON apply-phase1.sh installed:
+# same branches targeted, every rule type still present, every rule
+# parameter unchanged. bypass=exact also requires the single
+# OrganizationAdmin:pull_request actor.
+ruleset_matches() {
+  local remote="$1" local_json="$2" bypass="$3"
+  python3 - "$remote" "$local_json" "$bypass" <<'PY'
+import json, sys
+
+remote = json.load(open(sys.argv[1]))
+want = json.load(open(sys.argv[2]))
+bypass_mode = sys.argv[3]
+errors = []
+
+def rules(data):
+    return {r["type"]: r.get("parameters", {}) for r in data.get("rules", [])}
+
+def same(got, value):
+    if isinstance(value, list):
+        return sorted(got or []) == sorted(value)
+    return got == value
+
+have_refs = remote.get("conditions", {}).get("ref_name", {})
+for key, value in want["conditions"]["ref_name"].items():
+    if not same(have_refs.get(key), value):
+        errors.append(f"ref_name.{key} is {have_refs.get(key)!r}, want {value!r}")
+
+have_rules, want_rules = rules(remote), rules(want)
+for rule_type, params in want_rules.items():
+    if rule_type not in have_rules:
+        errors.append(f"rule {rule_type} missing")
+        continue
+    for key, value in params.items():
+        got = have_rules[rule_type].get(key)
+        if not same(got, value):
+            errors.append(f"{rule_type}.{key} is {got!r}, want {value!r}")
+
+if "bypass_actors" not in remote:
+    print("warn: bypass_actors hidden (need admin to confirm hotfix bypass)", file=sys.stderr)
+else:
+    actors = [(a.get("actor_type"), a.get("bypass_mode")) for a in remote["bypass_actors"] or []]
+    if any(mode == "always" for _, mode in actors):
+        errors.append("allows always (direct-push) bypass")
+    elif bypass_mode == "exact" and actors and actors != [("OrganizationAdmin", "pull_request")]:
+        errors.append(f"bypass {actors}, want OrganizationAdmin:pull_request")
+
+for error in errors:
+    print(error, file=sys.stderr)
+sys.exit(1 if errors else 0)
+PY
 }
 
 echo "--- CODEOWNERS on main (shared validator) ---"
@@ -74,47 +131,23 @@ for REPO in "${FULL_TREATMENT_REPOS[@]}"; do
     continue
   fi
   gh api "repos/${ORG}/${REPO}/rulesets/${main_id}" > "${WORKDIR}/main.json"
-  if python3 - "${WORKDIR}/main.json" <<'PY'
-import json, sys
-
-def load(path):
-    return json.loads(open(path).read())
-
-def pr(data):
-    for rule in data["rules"]:
-        if rule.get("type") == "pull_request":
-            return rule["parameters"]
-    sys.exit("no pull_request rule")
-
-def bypass(data):
-    if "bypass_actors" not in data:
-        return None
-    return [(a.get("actor_type"), a.get("bypass_mode")) for a in data.get("bypass_actors") or []]
-
-main = load(sys.argv[1])
-m_pr = pr(main)
-ok = (
-    m_pr.get("require_code_owner_review") is True
-    and m_pr.get("allowed_merge_methods") == ["merge"]
-)
-if not ok:
-    print("pull_request parameters mismatch", file=sys.stderr)
-    sys.exit(1)
-
-m_actors = bypass(main)
-if m_actors is None:
-    print("warn main: bypass_actors hidden (need admin to confirm hotfix bypass)", file=sys.stderr)
-elif any(mode == "always" for _, mode in m_actors):
-    print("main allows always (direct-push) bypass", file=sys.stderr)
-    sys.exit(1)
-elif m_actors and m_actors != [("OrganizationAdmin", "pull_request")]:
-    print(f"main bypass {m_actors}, want OrganizationAdmin:pull_request", file=sys.stderr)
-    sys.exit(1)
-PY
-  then
-    echo "ok   ${REPO}: Code Owners on main, merge-only, no always-bypass"
+  if ruleset_matches "${WORKDIR}/main.json" "${PHASE1_DIR}/rulesets/main.json" exact; then
+    echo "ok   ${REPO}: main ruleset matches rulesets/main.json, no always-bypass"
   else
     echo "FAIL ${REPO}: ruleset parameters do not match Phase 1"
+    fail=1
+  fi
+  naming_id="$(ruleset_id "$REPO" "Sujho Phase 1 — branch naming")"
+  if [ -z "$naming_id" ]; then
+    echo "FAIL ${REPO}: branch naming ruleset missing"
+    fail=1
+    continue
+  fi
+  gh api "repos/${ORG}/${REPO}/rulesets/${naming_id}" > "${WORKDIR}/naming.json"
+  if ruleset_matches "${WORKDIR}/naming.json" "${PHASE1_DIR}/rulesets/branch-naming.json" any; then
+    echo "ok   ${REPO}: branch naming ruleset matches rulesets/branch-naming.json"
+  else
+    echo "FAIL ${REPO}: branch naming ruleset does not match rulesets/branch-naming.json"
     fail=1
   fi
 done
@@ -128,19 +161,10 @@ for REPO in "${LIGHT_TOUCH_REPOS[@]}"; do
     continue
   fi
   gh api "repos/${ORG}/${REPO}/rulesets/${id}" > "${WORKDIR}/lt.json"
-  if python3 - "${WORKDIR}/lt.json" <<'PY'
-import json, sys
-data = json.loads(open(sys.argv[1]).read())
-pr = next(r["parameters"] for r in data["rules"] if r.get("type") == "pull_request")
-if pr.get("require_code_owner_review"):
-    sys.exit(1)
-if any(a.get("bypass_mode") == "always" for a in data.get("bypass_actors") or []):
-    sys.exit(1)
-PY
-  then
-    echo "ok   ${REPO}: PR required, Code Owners off"
+  if ruleset_matches "${WORKDIR}/lt.json" "${PHASE1_DIR}/rulesets/light-touch-main.json" any; then
+    echo "ok   ${REPO}: light-touch ruleset matches rulesets/light-touch-main.json"
   else
-    echo "FAIL ${REPO}: light-touch ruleset is too strict or allows always-bypass"
+    echo "FAIL ${REPO}: light-touch ruleset does not match rulesets/light-touch-main.json"
     fail=1
   fi
 done

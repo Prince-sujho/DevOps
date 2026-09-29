@@ -12,7 +12,20 @@ from infra.llm.content import TextContent
 from infra.llm.oai.types.responses import Round
 
 
-def user_row(prompt: str, turn_id: str, created_at_ms: int) -> UserTranscriptMessage:
+def user_row(
+    prompt: str, turn_id: str, created_at_ms: int
+) -> UserTranscriptMessage:
+    """The transcript row for the user's own message in a turn.
+
+    Args:
+        prompt: the user's message text.
+        turn_id: this turn's id.
+        created_at_ms: when the turn started, epoch ms.
+    Returns:
+        The row.
+    Raises:
+        None.
+    """
     return UserTranscriptMessage(
         createdAtMs=created_at_ms,
         turnId=turn_id,
@@ -20,7 +33,20 @@ def user_row(prompt: str, turn_id: str, created_at_ms: int) -> UserTranscriptMes
     )
 
 
-def trace_rows(round: Round, turn_id: str, created_at_ms: int) -> list[TraceTranscriptMessage]:
+def trace_rows(
+    round: Round, turn_id: str, created_at_ms: int
+) -> list[TraceTranscriptMessage]:
+    """The transcript rows recording one tool-call round's raw items.
+
+    Args:
+        round: one round of the model's tool-call/response loop.
+        turn_id: the turn this round happened in.
+        created_at_ms: when the turn started, epoch ms.
+    Returns:
+        One row per item in round.
+    Raises:
+        None.
+    """
     return [
         TraceTranscriptMessage(
             createdAtMs=created_at_ms,
@@ -38,6 +64,18 @@ def assistant_rows(
     response_id: str | None,
     created_at_ms: int,
 ) -> list[AssistantTranscriptMessage]:
+    """The transcript rows for the assistant's visible reply contents.
+
+    Args:
+        contents: the response's visible content items.
+        turn_id: this turn's id.
+        response_id: the model response id these contents came from, if any.
+        created_at_ms: when the turn started, epoch ms.
+    Returns:
+        One row per item in contents.
+    Raises:
+        None.
+    """
     return [
         AssistantTranscriptMessage(
             createdAtMs=created_at_ms,

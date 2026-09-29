@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
 # Prints the browser + link commands for sujho-preprod's Developer Connect connection.
+#
+# Usage: ./developer-connect-setup.sh
+# Arguments: none. Prints commands only — nothing here mutates GCP.
+# Exit codes: 0 always (pure echo); the printed gcloud commands are run by hand.
 
 set -euo pipefail
 
 REGION="asia-south1"
 CONNECTION="sujho-github-dc-org"
 PROJECT="sujho-preprod"
-REPOS=(sujho text-agent user-service whatsapp-adapter admin document-worker redirect-service knowledge-store sujho-ops-mcp)
+REPOS=(
+  sujho text-agent user-service whatsapp-adapter admin
+  document-worker redirect-service knowledge-store sujho-ops-mcp
+)
 
 echo "prints commands only — run them yourself after the browser auth step"
 echo

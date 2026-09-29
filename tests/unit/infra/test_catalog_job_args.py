@@ -19,8 +19,18 @@ ENTRY_VERBS = set(get_args(EntryVerb))
 
 @pytest.mark.boundary
 @pytest.mark.parametrize("verb", ALL_VERBS)
-def test_entry_verbs_require_an_id_and_other_verbs_forbid_one(verb: str) -> None:
-    """Round-trips job_args (the container args) back through parse_job_args."""
+def test_entry_verbs_require_an_id_and_other_verbs_forbid_one(
+    verb: str,
+) -> None:
+    """Round-trips job_args (the container args) back through parse_job_args.
+
+    Args:
+        verb: the parametrized real Verb/EntryVerb literal under test.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
     with_id = job_args(verb, "entry-123")[2:]
     without_id = job_args(verb)[2:]
     if verb in ENTRY_VERBS:

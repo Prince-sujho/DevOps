@@ -10,7 +10,18 @@ settings.load_profile("unit")
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    config.addinivalue_line("markers", "property: Hypothesis property-based test")
+    """Register the property/boundary markers used across tests/unit.
+
+    Args:
+        config: pytest's Config object for this session.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
+    config.addinivalue_line(
+        "markers", "property: Hypothesis property-based test"
+    )
     config.addinivalue_line(
         "markers", "boundary: hand-written boundary / named-case test"
     )

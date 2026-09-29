@@ -30,8 +30,19 @@ BASE_MS = 1_760_000_000_000
 
 
 async def test_successful_append_moves_cursors_with_the_rows(api, db):
-    """Happy path: after one user+assistant append, cursors match the rows."""
-    profile = await api.create_user(student_profile("910000020001", name="Commit"))
+    """A successful append moves the session cursors together with its rows.
+
+    Args:
+        api: the UsersApi test client.
+        db: the emulator-bound Firestore client.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
+    profile = await api.create_user(
+        student_profile("910000020001", name="Commit")
+    )
     user_id = profile["userId"]
     messages = [
         user_message("hello", BASE_MS, turn_id="t1"),
@@ -53,46 +64,126 @@ async def test_successful_append_moves_cursors_with_the_rows(api, db):
     assert activity["lastMessageAtMs"] == session["lastMessageAtMs"]
 
 
-async def test_failed_append_leaves_all_cursors_and_rows_unchanged(api, db, monkeypatch):
-    """A failing write inside the append transaction rolls every cursor back.
+def _explode_activity_tip(*args, **kwargs):
+    """Stand in for the activity-tip write and fail it on purpose.
 
-    The activity-tip write shares the commit with the rows. An exception from
-    that write must abort the Firestore transaction so lastMessageAtMs,
-    nextTranscriptSequence, the activity tip and the transcript rows all stay
-    at the pre-append snapshot. Firestore itself is not mocked.
+    Args:
+        args: positional args from the call site (ignored).
+        kwargs: keyword args from the call site (ignored).
+    Returns:
+        None.
+    Raises:
+        RuntimeError: always, to simulate a mid-transaction failure.
     """
-    profile = await api.create_user(student_profile("910000020002", name="Rollback"))
+    raise RuntimeError("injected failure of the activity-tip write")
+
+
+async def _cursor_snapshot(db, user_id: str) -> tuple[dict, dict, list]:
+    """Session doc, activity tip, and sorted transcript row ids for user_id.
+
+    Args:
+        db: the emulator-bound Firestore client.
+        user_id: the user whose cursors/rows to read.
+    Returns:
+        (session, activity, row_ids) as of the moment this is called.
+    Raises:
+        None.
+    """
+    session = dict(await session_doc(db, user_id, BASE_MS))
+    activity = dict(
+        (await user_doc(db, user_id))["activity"][K.WHATSAPP_THREAD_KEY]
+    )
+    row_ids = sorted(
+        row["_rowId"] for row in await transcript_rows(db, user_id)
+    )
+    return session, activity, row_ids
+
+
+async def _seeded_user(api, phone: str, name: str) -> str:
+    """Create a student and append one transcript row.
+
+    Args:
+        api: the UsersApi test client.
+        phone: the student's phone number.
+        name: the student's display name.
+    Returns:
+        The new user's id.
+    Raises:
+        AssertionError: the seed append did not succeed.
+    """
+    profile = await api.create_user(student_profile(phone, name=name))
     user_id = profile["userId"]
-    first = await api.append(user_id, [user_message("seed", BASE_MS, turn_id="seed")])
+    first = await api.append(
+        user_id, [user_message("seed", BASE_MS, turn_id="seed")]
+    )
     assert first.status_code == 200
+    return user_id
 
-    before_session = dict(await session_doc(db, user_id, BASE_MS))
-    before_activity = dict((await user_doc(db, user_id))["activity"][K.WHATSAPP_THREAD_KEY])
-    before_row_ids = sorted(row["_rowId"] for row in await transcript_rows(db, user_id))
 
-    def explode(*args, **kwargs):
-        raise RuntimeError("injected failure of the activity-tip write")
+def _assert_cursors_unchanged(before: tuple, after: tuple) -> None:
+    """Compare two cursor snapshots field by field.
 
-    monkeypatch.setattr(ThreadsRepository, "_save_activity", explode)
+    Args:
+        before: (session, activity, row ids) taken before the failing append.
+        after: the same triple taken after the failing append.
+    Returns:
+        None.
+    Raises:
+        AssertionError: any cursor or row id changed.
+    """
+    before_session, before_activity, before_row_ids = before
+    after_session, after_activity, after_row_ids = after
+    assert after_session["lastMessageAtMs"] == before_session["lastMessageAtMs"]
+    assert (
+        after_session["nextTranscriptSequence"]
+        == before_session["nextTranscriptSequence"]
+    )
+    assert after_activity == before_activity
+    assert after_row_ids == before_row_ids
 
+
+async def test_failed_append_leaves_all_cursors_and_rows_unchanged(
+    api, db, monkeypatch
+):
+    """A failed append (mid-transaction) leaves every cursor and row exactly as
+    before.
+
+    Args:
+        api: the UsersApi test client.
+        db: the emulator-bound Firestore client.
+        monkeypatch: pytest's monkeypatch fixture, used to inject the failure.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
+    user_id = await _seeded_user(api, "910000020002", "Rollback")
+    before = await _cursor_snapshot(db, user_id)
+    monkeypatch.setattr(
+        ThreadsRepository, "_save_activity", _explode_activity_tip
+    )
     failed = await api.append(
         user_id,
         [user_message("should not land", BASE_MS + 10, turn_id="fail")],
         started_at_ms=BASE_MS,
     )
     assert failed.status_code >= 500
-
-    after_session = await session_doc(db, user_id, BASE_MS)
-    after_activity = (await user_doc(db, user_id))["activity"][K.WHATSAPP_THREAD_KEY]
-    after_row_ids = sorted(row["_rowId"] for row in await transcript_rows(db, user_id))
-    assert after_session["lastMessageAtMs"] == before_session["lastMessageAtMs"]
-    assert after_session["nextTranscriptSequence"] == before_session["nextTranscriptSequence"]
-    assert after_activity == before_activity
-    assert after_row_ids == before_row_ids
+    after = await _cursor_snapshot(db, user_id)
+    _assert_cursors_unchanged(before, after)
 
 
 async def test_join_append_does_not_open_a_new_session(api, db):
-    """A follow-up append in the same gap joins the session: openedSessionNumber is None."""
+    """Appending within the session gap joins the existing session, opening
+    none.
+
+    Args:
+        api: the UsersApi test client.
+        db: the emulator-bound Firestore client.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
     profile = await api.create_user(student_profile("910000020003", name="Tip"))
     user_id = profile["userId"]
     first = await api.append(
@@ -119,7 +210,16 @@ async def test_join_append_does_not_open_a_new_session(api, db):
 
 
 async def test_append_for_an_unknown_user_writes_nothing(api, db):
-    """The route has no 404 gate, so it fails in the transaction — but writes nothing."""
+    """Appending for a user id that doesn't exist writes nothing.
+
+    Args:
+        api: the UsersApi test client.
+        db: the emulator-bound Firestore client.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
     unknown_id = "no-such-user"
     response = await api.append(
         unknown_id, [user_message("hello", BASE_MS, turn_id="t-unknown")]

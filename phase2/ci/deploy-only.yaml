@@ -53,7 +53,8 @@ steps:
           "${_REGISTRY}/${_SERVICE_NAME}:sha-${_SHORT_SHA}" \
           --format='value(image_summary.digest)')"
         if [ -z "$DIGEST" ]; then
-          echo "Refuse: ${_REGISTRY}/${_SERVICE_NAME}:sha-${_SHORT_SHA} does not exist. Nothing was tested to promote."
+          echo "Refuse: ${_REGISTRY}/${_SERVICE_NAME}:sha-${_SHORT_SHA}" \
+            "does not exist. Nothing was tested to promote."
           exit 1
         fi
         echo "$DIGEST" > /workspace/.digest

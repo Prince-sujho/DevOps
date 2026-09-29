@@ -2,6 +2,11 @@
 # GitHub Actions -> GCP login (WIF). Creates the pool/provider and six narrow
 # account identities (see IAM-table.md) — no role granted here, that's by hand.
 # Dry-run unless --apply. Fill GITHUB_OWNER_ID first: gh api orgs/Sujho --jq .id
+#
+# Usage: GITHUB_OWNER_ID=<digits> [WIF_PROJECT=sujho-preprod] ./provision-wif.sh [--apply]
+# Arguments: --apply — actually run the gcloud commands (default: print only).
+# Exit codes: 0 ok; 1 unknown argument, missing/placeholder/non-numeric
+#   GITHUB_OWNER_ID, or (with --apply) a project number lookup failure.
 
 set -euo pipefail
 
@@ -34,7 +39,8 @@ done
 die() { echo "error: $*" >&2; exit 1; }
 
 if [[ "$GITHUB_OWNER_ID" == *REPLACE* ]] || [ -z "$GITHUB_OWNER_ID" ]; then
-  die "GITHUB_OWNER_ID must be the numeric GitHub org id, not a placeholder (gh api orgs/Sujho --jq .id)"
+  die "GITHUB_OWNER_ID must be the numeric GitHub org id, not a placeholder" \
+    "(gh api orgs/Sujho --jq .id)"
 fi
 if ! [[ "$GITHUB_OWNER_ID" =~ ^[0-9]+$ ]]; then
   die "GITHUB_OWNER_ID must be digits only (GitHub org id), got: ${GITHUB_OWNER_ID}"
@@ -67,7 +73,9 @@ provider_resource() {
 
 repo_member() {
   local number="$1"
-  echo "principalSet://iam.googleapis.com/$(pool_resource "$number")/attribute.repository/${GITHUB_ORG}/sujho"
+  local pool
+  pool="$(pool_resource "$number")"
+  echo "principalSet://iam.googleapis.com/${pool}/attribute.repository/${GITHUB_ORG}/sujho"
 }
 
 echo "WIF host project: ${WIF_PROJECT}"
@@ -89,13 +97,20 @@ run gcloud iam workload-identity-pools create "$POOL_ID" \
   --location=global \
   --display-name="GitHub Actions"
 
+ATTRIBUTE_MAPPING="google.subject=assertion.sub"
+ATTRIBUTE_MAPPING+=",attribute.actor=assertion.actor"
+ATTRIBUTE_MAPPING+=",attribute.repository=assertion.repository"
+ATTRIBUTE_MAPPING+=",attribute.repository_owner=assertion.repository_owner"
+ATTRIBUTE_MAPPING+=",attribute.repository_owner_id=assertion.repository_owner_id"
+ATTRIBUTE_MAPPING+=",attribute.ref=assertion.ref"
+
 run gcloud iam workload-identity-pools providers create-oidc "$PROVIDER_ID" \
   --project="$WIF_PROJECT" \
   --location=global \
   --workload-identity-pool="$POOL_ID" \
   --display-name="GitHub OIDC" \
   --issuer-uri="https://token.actions.githubusercontent.com" \
-  --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository,attribute.repository_owner=assertion.repository_owner,attribute.repository_owner_id=assertion.repository_owner_id,attribute.ref=assertion.ref" \
+  --attribute-mapping="$ATTRIBUTE_MAPPING" \
   --attribute-condition="assertion.repository_owner_id == '${GITHUB_OWNER_ID}'"
 
 # these only ask Cloud Build to run something, never run it themselves
@@ -140,6 +155,7 @@ echo
 echo "then set GitHub Variables by hand on ${GITHUB_ORG}/sujho (never Secrets):"
 echo "  GCP_WIF_PROVIDER=$(provider_resource "$WIF_NUMBER")"
 echo "  GCP_WIF_SERVICE_ACCOUNT_PREPROD=$(sa_email github-deploy-preprod "$PREPROD_PROJECT")"
-echo "  GCP_WIF_SERVICE_ACCOUNT_PREPROD_ROLLBACK=$(sa_email github-rollback-preprod "$PREPROD_PROJECT")"
+rollback_preprod_email="$(sa_email github-rollback-preprod "$PREPROD_PROJECT")"
+echo "  GCP_WIF_SERVICE_ACCOUNT_PREPROD_ROLLBACK=${rollback_preprod_email}"
 echo "  GCP_WIF_SERVICE_ACCOUNT_PROD=$(sa_email github-deploy-prod "$PROD_PROJECT")"
 echo "  GCP_WIF_SERVICE_ACCOUNT_PROD_ROLLBACK=$(sa_email github-rollback-prod "$PROD_PROJECT")"

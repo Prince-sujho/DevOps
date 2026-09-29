@@ -4,6 +4,11 @@
 #
 # Mutation: umbrella tests/ci/pipeline.py mutation, self-hosted runner.
 # Eval: Eval-Suite/run.py on sujho. Cases stay in Eval-Suite; no transcripts.
+#
+# Usage: ./apply-phase3.sh [--apply]
+# Arguments: --apply — open the PR on GitHub (default: validate + print plan).
+# Exit codes: 0 ok/dry-run; 1 (via die) --require-checks passed, an unknown
+#   argument, or a local invariants (validate.py) failure.
 
 usage() {
   cat <<'EOF'
@@ -44,7 +49,7 @@ Mutation + eval PR into \`main\` (${PHASE3_MUTATION_REPOS[*]}):
     python tests/ci/pipeline.py mutation  (self-hosted runner labeled mutation)
   ${PHASE3_MUTATION_SCRIPT}
   ${PHASE3_EVAL_WORKFLOW}
-    python Eval-Suite/run.py  (spend-capped, fake eval users)
+    python Eval-Suite/run.py  (live models, fake eval users; spend limits set at the provider)
   ${PHASE3_EVAL_SCRIPT}
   needs MUTATION_TRACKING_ISSUE, EVAL_TRACKING_ISSUE, GCP_WIF_SERVICE_ACCOUNT_EVAL, eval-* secrets
   This job reports only. It does not stamp preprod-approved.
@@ -59,8 +64,13 @@ fi
 put_file() {
   local repo="$1" dest="$2" src="$3" branch="$4" message="$5"
   local b64 existing
-  b64="$(python3 -c 'import base64, pathlib, sys; print(base64.b64encode(pathlib.Path(sys.argv[1]).read_bytes()).decode())' "$src")"
-  existing="$(gh api "repos/${ORG}/${repo}/contents/${dest}?ref=${branch}" --jq .sha 2>/dev/null || true)"
+  b64="$(python3 -c '
+import base64, pathlib, sys
+print(base64.b64encode(pathlib.Path(sys.argv[1]).read_bytes()).decode())
+' "$src")"
+  existing="$(
+    gh api "repos/${ORG}/${repo}/contents/${dest}?ref=${branch}" --jq .sha 2>/dev/null || true
+  )"
   local args=(gh api -X PUT "repos/${ORG}/${repo}/contents/${dest}"
     -f message="$message" -f content="$b64" -f branch="$branch")
   if [ -n "$existing" ]; then
@@ -82,7 +92,10 @@ ensure_branch_from() {
 open_dev_pr() {
   local repo="$1" title="$2" body="$3"
   local n
-  n="$(gh pr list --repo "${ORG}/${repo}" --base main --head "$PHASE3_BRANCH" --json number --jq '.[0].number' || true)"
+  n="$(
+    gh pr list --repo "${ORG}/${repo}" --base main --head "$PHASE3_BRANCH" \
+      --json number --jq '.[0].number' || true
+  )"
   if [ -n "$n" ]; then
     echo "${repo}: Phase 3 PR already open (#${n})"
     return 0
@@ -102,11 +115,13 @@ put_file "$REPO" "$PHASE3_MUTATION_WORKFLOW" "${PHASE3_DIR}/workflows/mutation.y
 put_file "$REPO" "$PHASE3_MUTATION_SCRIPT" "${PHASE3_DIR}/scripts/mutation_report.py" \
   "$PHASE3_BRANCH" "Phase 3: mutation reporter — drops flag an issue, never fail CI."
 put_file "$REPO" "$PHASE3_EVAL_WORKFLOW" "${PHASE3_DIR}/workflows/eval-replay.yml" \
-  "$PHASE3_BRANCH" "Phase 3: weekly Eval-Suite replay (spend-capped, not a merge gate)."
+  "$PHASE3_BRANCH" "Phase 3: weekly Eval-Suite replay (not a merge gate)."
 put_file "$REPO" "$PHASE3_EVAL_SCRIPT" "${PHASE3_DIR}/scripts/eval_replay.py" \
   "$PHASE3_BRANCH" "Phase 3: eval replay wrapper around Eval-Suite/run.py."
-open_dev_pr "$REPO" \
-  "Phase 3: weekly mutation + Eval-Suite" \
-  "Mutation via \`tests/ci/pipeline.py mutation\` (self-hosted). Eval via \`Eval-Suite/run.py\` (fake eval users, spend cap ₹4500). Reports only — never gates a deploy. Not a required check. Do not check in transcripts."
+PR_BODY="Mutation via \`tests/ci/pipeline.py mutation\` (self-hosted)."
+PR_BODY+=" Eval via \`Eval-Suite/run.py\` (fake eval users, live models; spend limits live at the provider)."
+PR_BODY+=" Reports only — never gates a deploy. Not a required check."
+PR_BODY+=" Do not check in transcripts."
+open_dev_pr "$REPO" "Phase 3: weekly mutation + Eval-Suite" "$PR_BODY"
 
 echo "skip: ${PHASE3_SKIP_REPOS[*]}"

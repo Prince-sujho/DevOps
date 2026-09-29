@@ -19,10 +19,29 @@ pytestmark = pytest.mark.asyncio
 
 
 async def _seed(graph, rows: GraphRows) -> None:
+    """Write one set of prepared rows into the graph.
+
+    Args:
+        graph: the graph client the rows are written into.
+        rows: prepared graph rows to write.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
     await write_rows(graph, rows)
 
 
 async def test_a_concept_covered_by_a_chapter_survives_gc(graph):
+    """A concept a chapter covers survives orphan GC.
+
+    Args:
+        graph: the wiped-clean session GraphClient.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
     rows = GraphRows()
     rows.node("Chapter", "ch-1", {"name": "Chapter", "entry_id": "e1"})
     rows.node("Concept", "concept-covered", {"name": "Covered"})
@@ -36,6 +55,15 @@ async def test_a_concept_covered_by_a_chapter_survives_gc(graph):
 
 
 async def test_a_concept_holding_a_question_survives_gc(graph):
+    """A concept holding a question survives orphan GC.
+
+    Args:
+        graph: the wiped-clean session GraphClient.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
     rows = GraphRows()
     rows.node("Concept", "concept-with-item", {"name": "Has item"})
     rows.node("Question", "q-1", {"stem": "2+2?", "entry_id": "e1"})
@@ -49,6 +77,15 @@ async def test_a_concept_holding_a_question_survives_gc(graph):
 
 
 async def test_a_concept_with_no_coverage_and_no_items_is_deleted(graph):
+    """A concept with no coverage and no items is reaped by orphan GC.
+
+    Args:
+        graph: the wiped-clean session GraphClient.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
     rows = GraphRows()
     rows.node("Concept", "concept-orphan", {"name": "Orphan"})
     await _seed(graph, rows)
@@ -60,7 +97,16 @@ async def test_a_concept_with_no_coverage_and_no_items_is_deleted(graph):
 
 
 async def test_an_uncovered_parent_survives_through_a_covered_child(graph):
-    """The subtree check walks HAS_SUBCONCEPT*0.., so a parent survives via any covered descendant."""
+    """The subtree check walks HAS_SUBCONCEPT*0.., so a parent survives via a
+    covered descendant.
+
+    Args:
+        graph: the wiped-clean session GraphClient.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
     rows = GraphRows()
     rows.node("Chapter", "ch-1", {"name": "Chapter", "entry_id": "e1"})
     rows.node("Concept", "parent", {"name": "Parent"})

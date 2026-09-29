@@ -16,6 +16,17 @@ from eval_suite.cases import select_cases  # noqa: E402
 
 
 def main() -> None:
+    """Parse CLI args, then either list matching case ids or run them.
+
+    Args:
+        None.
+    Returns:
+        None.
+    Raises:
+        ValueError: --case names an unknown case id, or the filters select
+            nothing.
+        SystemExit: (when actually running) at least one case failed or xpassed.
+    """
     parser = argparse.ArgumentParser(prog="Eval-Suite")
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--case", action="append", default=[])

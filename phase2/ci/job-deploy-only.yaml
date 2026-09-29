@@ -34,7 +34,8 @@ steps:
           "${_REGISTRY}/${_IMAGE}:sha-${_SHORT_SHA}" \
           --format='value(image_summary.digest)')"
         if [ -z "$DIGEST" ]; then
-          echo "Refuse: ${_REGISTRY}/${_IMAGE}:sha-${_SHORT_SHA} does not exist. Nothing was tested to promote."
+          echo "Refuse: ${_REGISTRY}/${_IMAGE}:sha-${_SHORT_SHA}" \
+            "does not exist. Nothing was tested to promote."
           exit 1
         fi
         echo "$DIGEST" > /workspace/.digest
@@ -71,8 +72,11 @@ steps:
         fi
         SCHED_NAME="${_JOB_ID}-schedule"
         SA="scheduler-invoker@${_TARGET_PROJECT}.iam.gserviceaccount.com"
-        URI="https://${_REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${_TARGET_PROJECT}/jobs/${_JOB_ID}:run"
-        if gcloud scheduler jobs describe "$SCHED_NAME" --project="${_TARGET_PROJECT}" --location="${_REGION}" >/dev/null 2>&1; then
+        BASE="https://${_REGION}-run.googleapis.com/apis/run.googleapis.com/v1"
+        URI="${BASE}/namespaces/${_TARGET_PROJECT}/jobs/${_JOB_ID}:run"
+        if gcloud scheduler jobs describe "$SCHED_NAME" \
+          --project="${_TARGET_PROJECT}" --location="${_REGION}" \
+          >/dev/null 2>&1; then
           gcloud scheduler jobs update http "$SCHED_NAME" \
             --project="${_TARGET_PROJECT}" --location="${_REGION}" \
             --schedule="${_SCHEDULE}" --uri="$URI" --http-method=POST \

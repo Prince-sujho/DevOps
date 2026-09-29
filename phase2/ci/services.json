@@ -1,29 +1,30 @@
 {
   "redirect": {
     "dockerfile": "redirect_service/app/Dockerfile",
-    "gitlinks": ["redirect_service", "infra"],
     "timeout": "15s",
     "min_instances": "1",
     "max_instances": "4",
     "cpu": "1",
     "memory": "256Mi",
     "verify": "health",
-    "run_args": ["--allow-unauthenticated"]
+    "run_args": [
+      "--allow-unauthenticated"
+    ]
   },
   "text": {
     "dockerfile": "text_agent/app/Dockerfile",
-    "gitlinks": ["text_agent", "infra"],
     "timeout": "3600s",
     "min_instances": "1",
     "max_instances": "10",
     "cpu": "1",
     "memory": "1Gi",
     "verify": "health",
-    "run_args": ["--allow-unauthenticated"]
+    "run_args": [
+      "--allow-unauthenticated"
+    ]
   },
   "users": {
     "dockerfile": "user_service/app/Dockerfile",
-    "gitlinks": ["user_service", "infra"],
     "timeout": "240s",
     "min_instances": "1",
     "max_instances": "10",
@@ -39,29 +40,32 @@
   },
   "whatsapp": {
     "dockerfile": "whatsapp_adapter/app/Dockerfile",
-    "gitlinks": ["whatsapp_adapter", "infra"],
     "timeout": "600s",
     "min_instances": "1",
     "max_instances": "1",
     "cpu": "1",
     "memory": "512Mi",
     "verify": "health",
-    "run_args": ["--allow-unauthenticated", "--no-cpu-throttling"]
+    "run_args": [
+      "--allow-unauthenticated",
+      "--no-cpu-throttling"
+    ]
   },
   "document-worker": {
     "dockerfile": "document_worker/Dockerfile",
-    "gitlinks": ["document_worker", "infra"],
     "timeout": "3600s",
     "min_instances": "0",
     "max_instances": "10",
     "cpu": "2",
     "memory": "4Gi",
     "verify": "health",
-    "run_args": ["--allow-unauthenticated", "--concurrency=1"]
+    "run_args": [
+      "--allow-unauthenticated",
+      "--concurrency=1"
+    ]
   },
   "admin": {
     "dockerfile": "admin/app/Dockerfile",
-    "gitlinks": ["admin", "infra"],
     "timeout": "240s",
     "min_instances": "1",
     "max_instances": "2",

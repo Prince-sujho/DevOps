@@ -74,6 +74,16 @@ CORPUS_SESSION_IDS = frozenset(
 
 
 def session_id(case_id: str) -> str:
+    """The real (anonymized) session id a case id was scripted against.
+
+    Args:
+        case_id: a case id shaped "<persona>-<session-id>".
+    Returns:
+        The session id part.
+    Raises:
+        ValueError: case_id isn't shaped persona-session, or the persona
+            prefix isn't "student"/"teacher".
+    """
     persona, _, rest = case_id.partition("-")
     if persona not in {"student", "teacher"} or not rest:
         raise ValueError(f"case id is not persona-session: {case_id}")
@@ -81,6 +91,16 @@ def session_id(case_id: str) -> str:
 
 
 def all_cases() -> list[EvalCase]:
+    """The full validated corpus: every student and teacher case.
+
+    Args:
+        None.
+    Returns:
+        Exactly the 60 cases matching CORPUS_SESSION_IDS.
+    Raises:
+        ValueError: the corpus fails assert_corpus's invariants, its session
+            ids don't exactly match CORPUS_SESSION_IDS, or it isn't 60 cases.
+    """
     cases = assert_corpus([*student_cases(), *teacher_cases()])
     found = {session_id(item.id) for item in cases}
     missing = sorted(CORPUS_SESSION_IDS - found)
@@ -93,6 +113,17 @@ def all_cases() -> list[EvalCase]:
 
 
 def select_cases(ids: list[str], tags: set[str]) -> list[EvalCase]:
+    """Filter the full corpus down to the cases a run should actually run.
+
+    Args:
+        ids: exact case ids to run; empty means no id filter.
+        tags: cases must carry every one of these tags; empty means no tag
+            filter.
+    Returns:
+        The matching cases, in corpus order (or ids order if ids was given).
+    Raises:
+        ValueError: an id in ids doesn't exist, or the filters select nothing.
+    """
     cases = all_cases()
     if ids:
         by_id = {item.id: item for item in cases}

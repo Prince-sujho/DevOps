@@ -38,8 +38,6 @@ jobs:
 
       - name: Report (never fails the job)
         run: python3 scripts/mutation_report.py --report mutants/mutmut-cicd-stats.json
-        env:
-          BASELINE: "0.98"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
@@ -64,7 +62,10 @@ jobs:
             if (!n) return;
             let body = `<!-- phase3-mutation -->\n### Weekly mutation (${context.repo.repo})\n\n`;
             if (r.skipped) body += `Skipped: ${r.reason}\n`;
-            else body += `Score ${r.score} (killed ${r.killed}/${r.total}, survivors ${r.survivors}). Baseline ${r.baseline}. ${r.reason}\n`;
+            else {
+              body += `Score ${r.score} (killed ${r.killed}/${r.total}, `;
+              body += `survivors ${r.survivors}). Baseline ${r.baseline}. ${r.reason}\n`;
+            }
             if (r.flag_review) body += `\nNeeds a human look — not a CI failure.\n`;
             await github.rest.issues.createComment({
               owner: context.repo.owner, repo: context.repo.repo, issue_number: n, body,

@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Promotion pipeline files — build/deploy recipes, service config, rollback,
 # IAM table. Lands on Sujho/sujho via PR; nothing here deploys by itself.
+#
+# Usage: see usage() below — ./apply-phase2.sh [--apply]
+# Arguments: --apply — actually open the PR on GitHub (default: dry-run/plan only).
+# Exit codes: 0 ok/dry-run; 1 (via die) unknown argument, or local Phase 2
+#   invariants (validate.py / jobs/validate.py) failed.
 
 usage() {
   cat <<'EOF'
@@ -47,8 +52,14 @@ put_file() {
   local dest="$1" src="$2"
   [ -f "$src" ] || die "missing local file: $src"
   local b64 existing
-  b64="$(python3 -c 'import base64, pathlib, sys; print(base64.b64encode(pathlib.Path(sys.argv[1]).read_bytes()).decode())' "$src")"
-  existing="$(gh api "repos/${ORG}/${PHASE2_REPO}/contents/${dest}?ref=${PHASE2_BRANCH}" --jq .sha 2>/dev/null || true)"
+  b64="$(python3 -c '
+import base64, pathlib, sys
+print(base64.b64encode(pathlib.Path(sys.argv[1]).read_bytes()).decode())
+' "$src")"
+  existing="$(
+    gh api "repos/${ORG}/${PHASE2_REPO}/contents/${dest}?ref=${PHASE2_BRANCH}" \
+      --jq .sha 2>/dev/null || true
+  )"
   local args=(gh api -X PUT "repos/${ORG}/${PHASE2_REPO}/contents/${dest}"
     -f message="Phase 2: ${dest}" -f content="$b64" -f branch="$PHASE2_BRANCH")
   if [ -n "$existing" ]; then
@@ -64,11 +75,18 @@ for entry in "${PHASE2_FILE_MAP[@]}"; do
   put_file "${entry%%:*}" "${entry#*:}"
 done
 
-n="$(gh pr list --repo "${ORG}/${PHASE2_REPO}" --base main --head "$PHASE2_BRANCH" --json number --jq '.[0].number' || true)"
+n="$(
+  gh pr list --repo "${ORG}/${PHASE2_REPO}" --base main --head "$PHASE2_BRANCH" \
+    --json number --jq '.[0].number' || true
+)"
 if [ -n "$n" ]; then
   echo "${PHASE2_REPO}: Phase 2 PR already open (#${n}) — a Lead must merge it"
 else
+  PR_BODY="One build recipe, one deploy-only recipe, one services.json."
+  PR_BODY+=" Prod deploy pauses on the production Environment instead of a"
+  PR_BODY+=" separate approve step. Warehouse lives in sujho-preprod,"
+  PR_BODY+=" sujho-dev untouched. GCP-side setup: IAM-table.md, by hand."
   gh pr create --repo "${ORG}/${PHASE2_REPO}" --base main --head "$PHASE2_BRANCH" \
     --title "Phase 2: promotion pipeline (Pre-Prod -> Prod, no auto-deploy)" \
-    --body "One build recipe, one deploy-only recipe, one services.json. Prod deploy pauses on the production Environment instead of a separate approve step. Warehouse lives in sujho-preprod, sujho-dev untouched. GCP-side setup: IAM-table.md, by hand."
+    --body "$PR_BODY"
 fi

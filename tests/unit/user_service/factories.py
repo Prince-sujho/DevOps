@@ -29,7 +29,11 @@ from infra.clients.users import (
     UserSort,
 )
 from infra.curriculum import Grade, Subject
-from infra.hubble.types import HubbleAmountRestrictions, HubbleInstructionSet, HubbleProduct
+from infra.hubble.types import (
+    HubbleAmountRestrictions,
+    HubbleInstructionSet,
+    HubbleProduct,
+)
 
 # The README calls this a "frozen commitment in code" but names no numbers
 # itself (user_service/README.md: "The tier ladder lives in
@@ -66,11 +70,19 @@ HMAC_SECRET = "unit-test-users-user-id-hmac-secret"
 
 
 def gift_card(
-    *,
-    amount_inr: int,
-    status: GiftCardStatus,
-    gift_id: str = "gc-1",
+    *, amount_inr: int, status: GiftCardStatus, gift_id: str = "gc-1"
 ) -> GiftCard:
+    """Build one gift card for the fixed Amazon test product.
+
+    Args:
+        amount_inr: the card's amount, in INR.
+        status: the card's status.
+        gift_id: the card's id.
+    Returns:
+        The GiftCard.
+    Raises:
+        None.
+    """
     return GiftCard(
         id=gift_id,
         productId=AMAZON_PRODUCT_ID,
@@ -78,6 +90,59 @@ def gift_card(
         amountInr=amount_inr,
         status=status,
         createdAtMs=1_700_000_000_000,
+    )
+
+
+def _how_to_use(instructions: Optional[list[str]]) -> list:
+    """Redemption instructions for a Hubble product.
+
+    Args:
+        instructions: redemption instructions, or None for the default.
+    Returns:
+        A one-item how-to list, or [] when instructions is empty.
+    Raises:
+        None.
+    """
+    if instructions is None:
+        return [
+            HubbleInstructionSet(
+                instructions=["Redeem at the brand's checkout"]
+            )
+        ]
+    if instructions:
+        return [HubbleInstructionSet(instructions=instructions)]
+    return []
+
+
+def _amount_restrictions(
+    omit_restrictions: bool,
+    restrictions: Optional[HubbleAmountRestrictions],
+    min_voucher: int,
+    max_voucher: int,
+    denominations: Optional[list[int]],
+) -> Optional[HubbleAmountRestrictions]:
+    """Amount restrictions for a Hubble product, or None when omitted.
+
+    Args:
+        omit_restrictions: True to set amountRestrictions to None entirely.
+        restrictions: explicit amountRestrictions to use instead of building
+            one.
+        min_voucher: the minimum voucher amount, if restrictions apply.
+        max_voucher: the maximum voucher amount, if restrictions apply.
+        denominations: fixed denominations, or None for the flexible path.
+    Returns:
+        The amount restrictions, or None.
+    Raises:
+        None.
+    """
+    if omit_restrictions:
+        return None
+    if restrictions is not None:
+        return restrictions
+    return HubbleAmountRestrictions(
+        minVoucherAmount=min_voucher,
+        maxVoucherAmount=max_voucher,
+        denominations=[] if denominations is None else denominations,
     )
 
 
@@ -93,26 +158,28 @@ def hubble_product(
 ) -> HubbleProduct:
     """Build one Hubble product.
 
-    ``denominations=[]`` (the default) is the flexible path; a non-empty list
-    is the fixed-denomination path. Pass ``omit_restrictions=True`` for the
+    ``denominations=[]`` (the default) is the flexible path; a non-empty list is
+    the fixed-denomination path. Pass ``omit_restrictions=True`` for the
     ``amountRestrictions is None`` case.
-    """
-    how = []
-    if instructions is None:
-        how = [HubbleInstructionSet(instructions=["Redeem at the brand's checkout"])]
-    elif instructions:
-        how = [HubbleInstructionSet(instructions=instructions)]
 
-    if omit_restrictions:
-        amount_restrictions = None
-    elif restrictions is not None:
-        amount_restrictions = restrictions
-    else:
-        amount_restrictions = HubbleAmountRestrictions(
-            minVoucherAmount=min_voucher,
-            maxVoucherAmount=max_voucher,
-            denominations=[] if denominations is None else denominations,
-        )
+    Args:
+        status: the product's Hubble status.
+        min_voucher: the minimum voucher amount, if restrictions apply.
+        max_voucher: the maximum voucher amount, if restrictions apply.
+        denominations: fixed denominations, or None/[] for the flexible path.
+        instructions: redemption instructions, or None for the default.
+        restrictions: explicit amountRestrictions to use instead of building
+            one.
+        omit_restrictions: True to set amountRestrictions to None entirely.
+    Returns:
+        The HubbleProduct.
+    Raises:
+        None.
+    """
+    how = _how_to_use(instructions)
+    amount_restrictions = _amount_restrictions(
+        omit_restrictions, restrictions, min_voucher, max_voucher, denominations
+    )
     return HubbleProduct(
         id=AMAZON_PRODUCT_ID,
         status=status,
@@ -128,6 +195,18 @@ def payout(
     block_size: int = 5,
     incentive_cap_inr: int = 200,
 ) -> Payout:
+    """Build one flat + per-block payout structure, capped at incentive_cap_inr.
+
+    Args:
+        base_inr: the flat base payout.
+        per_block_inr: the per-block incremental payout.
+        block_size: how many referrals make one block.
+        incentive_cap_inr: the maximum total payout.
+    Returns:
+        The Payout.
+    Raises:
+        None.
+    """
     return Payout(
         baseInr=base_inr,
         perBlockInr=per_block_inr,
@@ -137,11 +216,20 @@ def payout(
 
 
 def campaign(
-    campaign_id: str,
-    start_ms: int,
-    end_ms: int,
-    terms: Optional[Payout] = None,
+    campaign_id: str, start_ms: int, end_ms: int, terms: Optional[Payout] = None
 ) -> Campaign:
+    """Build one campaign, defaulting to the standard payout terms.
+
+    Args:
+        campaign_id: the campaign's id.
+        start_ms: the campaign's start time, epoch ms.
+        end_ms: the campaign's end time, epoch ms.
+        terms: the payout terms, or None for the default.
+    Returns:
+        The Campaign.
+    Raises:
+        None.
+    """
     return Campaign(
         id=campaign_id,
         startMs=start_ms,
@@ -150,8 +238,22 @@ def campaign(
     )
 
 
-def influencer(*, handle: str = "coolkid", created_at_ms: int = 1_000) -> Influencer:
-    return Influencer(handle=handle, platform="instagram", createdAtMs=created_at_ms)
+def influencer(
+    *, handle: str = "coolkid", created_at_ms: int = 1_000
+) -> Influencer:
+    """Build one influencer with a fixed platform.
+
+    Args:
+        handle: the influencer's handle.
+        created_at_ms: the influencer's creation time, epoch ms.
+    Returns:
+        The Influencer.
+    Raises:
+        None.
+    """
+    return Influencer(
+        handle=handle, platform="instagram", createdAtMs=created_at_ms
+    )
 
 
 def ambassador(
@@ -160,7 +262,83 @@ def ambassador(
     user_id: str = "user-arjun",
     created_at_ms: int = 1_000,
 ) -> Ambassador:
+    """Build one ambassador handle/user pair.
+
+    Args:
+        handle: the ambassador's handle.
+        user_id: the underlying user's id.
+        created_at_ms: the ambassador's creation time, epoch ms.
+    Returns:
+        The Ambassador.
+    Raises:
+        None.
+    """
     return Ambassador(handle=handle, userId=user_id, createdAtMs=created_at_ms)
+
+
+def _whatsapp_activity(
+    session_count: int, last_message_at_ms: Optional[int]
+) -> UserActivity:
+    """A single-channel whatsapp activity record.
+
+    Args:
+        session_count: the whatsapp session count.
+        last_message_at_ms: the last whatsapp message time, or None.
+    Returns:
+        The UserActivity.
+    Raises:
+        None.
+    """
+    return UserActivity(
+        {
+            "whatsapp": ChannelActivity(
+                sessionCount=session_count, lastMessageAtMs=last_message_at_ms
+            )
+        }
+    )
+
+
+def _student_profile(
+    user_id: str,
+    phone: str,
+    name: str,
+    grade: Grade,
+    subjects: Optional[list[Subject]],
+    created_at_ms: int,
+    referrer_handle: Optional[str],
+    activity: UserActivity,
+) -> StudentProfile:
+    """Assemble a student profile around the shared test institution.
+
+    Args:
+        user_id: the profile's user id.
+        phone: the student's phone number.
+        name: the student's name.
+        grade: the student's grade.
+        subjects: enrolled subjects, or None for none.
+        created_at_ms: the profile's creation time, epoch ms.
+        referrer_handle: the attributed referrer handle, or None.
+        activity: the profile's channel activity.
+    Returns:
+        The StudentProfile.
+    Raises:
+        None.
+    """
+    return StudentProfile(
+        userId=user_id,
+        phone=phone,
+        name=name,
+        institution=Institution(id="school-1", name="Test School"),
+        persona="student",
+        createdAtMs=created_at_ms,
+        attribution=(
+            ReferrerAttribution(handle=referrer_handle)
+            if referrer_handle
+            else None
+        ),
+        scope=StudentScope(grade=grade, subjects=subjects or []),
+        activity=activity,
+    )
 
 
 def student(
@@ -175,25 +353,33 @@ def student(
     last_message_at_ms: Optional[int] = None,
     session_count: int = 0,
 ) -> StudentProfile:
-    activity = UserActivity(
-        {
-            "whatsapp": ChannelActivity(
-                sessionCount=session_count, lastMessageAtMs=last_message_at_ms
-            )
-        }
-    )
-    return StudentProfile(
-        userId=user_id,
-        phone=phone,
-        name=name,
-        institution=Institution(id="school-1", name="Test School"),
-        persona="student",
-        createdAtMs=created_at_ms,
-        attribution=(
-            ReferrerAttribution(handle=referrer_handle) if referrer_handle else None
-        ),
-        scope=StudentScope(grade=grade, subjects=subjects or []),
-        activity=activity,
+    """Build one student profile with a single-channel whatsapp activity record.
+
+    Args:
+        user_id: the profile's user id.
+        phone: the student's phone number.
+        name: the student's name.
+        grade: the student's grade.
+        subjects: enrolled subjects, or None for the default.
+        created_at_ms: the profile's creation time, epoch ms.
+        referrer_handle: the attributed referrer handle, or None.
+        last_message_at_ms: the last whatsapp message time, or None.
+        session_count: the whatsapp session count.
+    Returns:
+        The StudentProfile.
+    Raises:
+        None.
+    """
+    activity = _whatsapp_activity(session_count, last_message_at_ms)
+    return _student_profile(
+        user_id,
+        phone,
+        name,
+        grade,
+        subjects,
+        created_at_ms,
+        referrer_handle,
+        activity,
     )
 
 
@@ -207,13 +393,22 @@ def teacher(
     last_message_at_ms: Optional[int] = None,
     session_count: int = 0,
 ) -> TeacherProfile:
-    activity = UserActivity(
-        {
-            "whatsapp": ChannelActivity(
-                sessionCount=session_count, lastMessageAtMs=last_message_at_ms
-            )
-        }
-    )
+    """Build one teacher profile with a single-channel whatsapp activity record.
+
+    Args:
+        user_id: the profile's user id.
+        phone: the teacher's phone number.
+        name: the teacher's name.
+        created_at_ms: the profile's creation time, epoch ms.
+        referrer_handle: the attributed referrer handle, or None.
+        last_message_at_ms: the last whatsapp message time, or None.
+        session_count: the whatsapp session count.
+    Returns:
+        The TeacherProfile.
+    Raises:
+        None.
+    """
+    activity = _whatsapp_activity(session_count, last_message_at_ms)
     return TeacherProfile(
         userId=user_id,
         phone=phone,
@@ -222,7 +417,9 @@ def teacher(
         persona="teacher",
         createdAtMs=created_at_ms,
         attribution=(
-            ReferrerAttribution(handle=referrer_handle) if referrer_handle else None
+            ReferrerAttribution(handle=referrer_handle)
+            if referrer_handle
+            else None
         ),
         scope=TeacherScope(grades=[8], subjects=[]),
         activity=activity,
@@ -237,6 +434,19 @@ def directory_entry(
     last_message_at_ms: Optional[int] = None,
     session_count: int = 0,
 ) -> DirectoryEntry:
+    """Build one directory listing row wrapping an existing profile.
+
+    Args:
+        profile: the profile this row lists.
+        activity_state: the row's activity-state label.
+        blocked: whether the profile is blocked.
+        last_message_at_ms: the last whatsapp message time, or None.
+        session_count: the whatsapp session count.
+    Returns:
+        The DirectoryEntry.
+    Raises:
+        None.
+    """
     return DirectoryEntry(
         profile=profile,
         activity=ChannelActivity(
@@ -258,6 +468,23 @@ def directory_query(
     blocked: Optional[list[str]] = None,
     persona: str = "student",
 ) -> UserDirectoryQuery:
+    """Build one directory search query, defaulting to an unfiltered student
+    search.
+
+    Args:
+        q: the free-text search string.
+        sort: the sort field.
+        grade: grade filter, or None.
+        subject: subject filter, or None.
+        activity: activity-state filter, or None.
+        attribution: attribution filter, or None.
+        blocked: blocked-state filter, or None.
+        persona: the persona to search within.
+    Returns:
+        The UserDirectoryQuery.
+    Raises:
+        None.
+    """
     return UserDirectoryQuery(
         persona=persona,  # type: ignore[arg-type]
         q=q,

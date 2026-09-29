@@ -28,7 +28,11 @@ from infra.firestore.collections import (
     THREADS_SUBCOLLECTION,
     USERS_COLLECTION,
 )
-from user_service.app.src.constants import AMBASSADOR_TIERS, RETENTION_WINDOW_MS, REWARD_PRODUCTS
+from user_service.app.src.constants import (
+    AMBASSADOR_TIERS,
+    RETENTION_WINDOW_MS,
+    REWARD_PRODUCTS,
+)
 
 TEST_PROJECT: Final[str] = "sujho-integration-test"
 TEST_LOCATION: Final[str] = "asia-south1"

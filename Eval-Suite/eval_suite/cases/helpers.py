@@ -3,7 +3,15 @@
 from __future__ import annotations
 
 from ..constants import REQUIRED_TAGS, TOOL_CREATE, TOOL_IMAGE, TOOL_PROFILE
-from ..types import Attachments, EvalCase, EvalTurn, EvalUserId, Expect, KnownRed, Stack
+from ..types import (
+    Attachments,
+    EvalCase,
+    EvalTurn,
+    EvalUserId,
+    Expect,
+    KnownRed,
+    Stack,
+)
 
 LIVE = Attachments(live=True)
 FRESH = Attachments(live=True, fresh=True)
@@ -30,6 +38,18 @@ def doc(
     fresh: bool = False,
     min_count: int = 1,
 ) -> Attachments:
+    """A live-attachment expectation requiring the given patterns inside it.
+
+    Args:
+        *need: patterns that must each match somewhere in the attachment's text.
+        suffix: required file extension, or None for any.
+        fresh: True if the attachment must not repeat an earlier turn's file.
+        min_count: minimum distinct attached files required.
+    Returns:
+        The Attachments expectation.
+    Raises:
+        None.
+    """
     return Attachments(
         live=True,
         suffix=suffix,
@@ -39,8 +59,23 @@ def doc(
     )
 
 
-def turn(prompt: str, expect: Expect | None = None, review: list[str] | None = None) -> EvalTurn:
-    return EvalTurn(prompt=prompt, expect=expect or Expect(), review=review or [])
+def turn(
+    prompt: str, expect: Expect | None = None, review: list[str] | None = None
+) -> EvalTurn:
+    """One user turn in a case's conversation.
+
+    Args:
+        prompt: the user's message text.
+        expect: what the response must/must not do; defaults to no expectation.
+        review: human-readable notes on why this turn's assertion matters.
+    Returns:
+        The EvalTurn.
+    Raises:
+        None.
+    """
+    return EvalTurn(
+        prompt=prompt, expect=expect or Expect(), review=review or []
+    )
 
 
 def case(
@@ -53,6 +88,22 @@ def case(
     waive: set[str] | None = None,
     known_red: KnownRed | None = None,
 ) -> EvalCase:
+    """One full eval case: a scripted conversation plus its pass/fail rules.
+
+    Args:
+        case_id: this case's unique id.
+        user_id: the real (anonymized) user id this case is scripted against.
+        tags: labels used to select/group cases at run time.
+        turns: the conversation's turns, in order.
+        profile_unchanged: True if the user's profile must be identical
+            before/after.
+        waive: universal-check names this case is allowed to skip.
+        known_red: a known, accepted failure signature, if this case is xfail.
+    Returns:
+        The EvalCase.
+    Raises:
+        None.
+    """
     return EvalCase(
         id=case_id,
         user_id=user_id,
@@ -65,6 +116,17 @@ def case(
 
 
 def assert_corpus(cases: list[EvalCase]) -> list[EvalCase]:
+    """Validate a whole case corpus's invariants before it can be run.
+
+    Args:
+        cases: the full case list to validate.
+    Returns:
+        The same cases, unchanged, once every invariant holds.
+    Raises:
+        ValueError: a duplicate case id, a case missing a persona tag, a case
+            with no hard Expect anywhere (and not profile_unchanged), or a
+            required tag group missing from the corpus entirely.
+    """
     ids = [item.id for item in cases]
     if len(ids) != len(set(ids)):
         raise ValueError("duplicate case id")

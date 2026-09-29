@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# Local by default. --remote reads GitHub (no writes).
+#
+# Usage: see usage() below — ./verify-phase3.sh [--remote]
+# Arguments: --remote — also check GitHub (read-only); default is local-only.
+# Exit codes: 0 ok; 1 unknown argument, or (via die) remote verification found
+#   a failure.
 usage() {
   cat <<'EOF'
   ./verify-phase3.sh           # validate.py only
@@ -32,7 +38,10 @@ fail=0
 
 echo "--- mutation workflow on sujho ---"
 for REPO in "${PHASE3_MUTATION_REPOS[@]}"; do
-  wf="$(gh api "repos/${ORG}/${REPO}/contents/${PHASE3_MUTATION_WORKFLOW}?ref=main" --jq .path 2>/dev/null || true)"
+  wf="$(
+    gh api "repos/${ORG}/${REPO}/contents/${PHASE3_MUTATION_WORKFLOW}?ref=main" \
+      --jq .path 2>/dev/null || true
+  )"
   if [ -z "$wf" ]; then
     echo "FAIL ${REPO}: missing ${PHASE3_MUTATION_WORKFLOW} on main"
     fail=1
@@ -43,8 +52,14 @@ done
 
 echo "--- eval on sujho (Eval-Suite) ---"
 for REPO in "${PHASE3_EVAL_REPOS[@]}"; do
-  wf="$(gh api "repos/${ORG}/${REPO}/contents/${PHASE3_EVAL_WORKFLOW}?ref=main" --jq .path 2>/dev/null || true)"
-  script="$(gh api "repos/${ORG}/${REPO}/contents/${PHASE3_EVAL_SCRIPT}?ref=main" --jq .path 2>/dev/null || true)"
+  wf="$(
+    gh api "repos/${ORG}/${REPO}/contents/${PHASE3_EVAL_WORKFLOW}?ref=main" \
+      --jq .path 2>/dev/null || true
+  )"
+  script="$(
+    gh api "repos/${ORG}/${REPO}/contents/${PHASE3_EVAL_SCRIPT}?ref=main" \
+      --jq .path 2>/dev/null || true
+  )"
   if [ -z "$wf" ] || [ -z "$script" ]; then
     echo "FAIL ${REPO}: missing eval workflow/script on main"
     fail=1
@@ -55,7 +70,10 @@ done
 
 echo "--- skip ---"
 for REPO in "${PHASE3_SKIP_REPOS[@]}"; do
-  wf="$(gh api "repos/${ORG}/${REPO}/contents/${PHASE3_MUTATION_WORKFLOW}?ref=main" --jq .path 2>/dev/null || true)"
+  wf="$(
+    gh api "repos/${ORG}/${REPO}/contents/${PHASE3_MUTATION_WORKFLOW}?ref=main" \
+      --jq .path 2>/dev/null || true
+  )"
   if [ -n "$wf" ]; then
     echo "FAIL ${REPO}: mutation workflow should not be here"
     fail=1
@@ -72,7 +90,8 @@ for REPO in "${PHASE3_MUTATION_REPOS[@]}"; do
       | while read -r id; do
           [ -n "$id" ] || continue
           gh api "repos/${ORG}/${REPO}/rulesets/${id}" --jq \
-            '.rules[]? | select(.type=="required_status_checks") | .parameters.required_status_checks[].context'
+            '.rules[]? | select(.type=="required_status_checks")
+             | .parameters.required_status_checks[].context'
         done | sort -u | tr '\n' ' '
   )"
   if echo "$ctx" | grep -Eqw 'mutation|eval-replay'; then

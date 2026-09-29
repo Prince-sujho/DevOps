@@ -96,11 +96,11 @@ jobs:
           SHORT="$(printf '%s' "$SHA" | cut -c1-7)"
           eval "$(python3 jobs/scripts/lookup_job.py --id "$JOB_ID")"
 
-          # one quoted string: values with spaces (_GITLINKS, _RUN_ARGS) stay one substitution
+          # one quoted string: values with spaces stay one substitution
           SUBS="_JOB_ID=$JOB_ID"
           SUBS+=",_DOCKERFILE=$DOCKERFILE"
           SUBS+=",_IMAGE=$IMAGE"
-          SUBS+=",_GITLINKS=$GITLINKS"
+          SUBS+=",_PACKAGE=$PACKAGE"
           SUBS+=",_RUNTIME_SA=$RUNTIME_SA"
           SUBS+=",_CPU=$CPU"
           SUBS+=",_MEMORY=$MEMORY"

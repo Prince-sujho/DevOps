@@ -20,12 +20,33 @@ INDIAN_MOBILE = st.from_regex(r"91[6-9][0-9]{9}", fullmatch=True)
 @pytest.mark.property
 @given(phone=INDIAN_MOBILE)
 def test_different_hmac_secrets_do_not_alias_the_same_phone(phone: str) -> None:
-    """Keep USERS_USER_ID_HMAC_SECRET stable: a rotated secret is a new identity space."""
-    assert _derive_user_id(phone, HMAC_SECRET) != _derive_user_id(phone, HMAC_SECRET + "-rotated")
+    """Keep USERS_USER_ID_HMAC_SECRET stable: a rotated secret is a new identity
+    space.
+
+    Args:
+        phone: hypothesis-generated Indian mobile number.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
+    assert _derive_user_id(phone, HMAC_SECRET) != _derive_user_id(
+        phone, HMAC_SECRET + "-rotated"
+    )
 
 
 @pytest.mark.property
 @given(a=INDIAN_MOBILE, b=INDIAN_MOBILE)
 def test_distinct_canonical_phones_do_not_collide(a: str, b: str) -> None:
+    """Two different phone numbers never derive the same user id.
+
+    Args:
+        a: one canonical phone number.
+        b: a different canonical phone number.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
     assume(a != b)
     assert _derive_user_id(a, HMAC_SECRET) != _derive_user_id(b, HMAC_SECRET)

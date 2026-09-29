@@ -12,6 +12,17 @@ from eval_suite.media import EvalMediaBucket
 
 @pytest.mark.asyncio
 async def test_render_writes_office_pdf_and_preview(tmp_path) -> None:
+    """render() writes a real .docx, PDF, and PNG preview under tmp_path's
+    bucket.
+
+    Args:
+        tmp_path: pytest temporary directory the rendered files are written
+            under.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
     bucket = EvalMediaBucket(tmp_path)
     documents = EvalDocuments(bucket)
     scope = ConversationMediaScope(user_id="eval-u", thread_key="eval-t")

@@ -1,1 +1,3 @@
-"""Persistence and cross-service integration tests against the Firestore emulator."""
+"""Persistence and cross-service integration tests against the Firestore
+emulator.
+"""

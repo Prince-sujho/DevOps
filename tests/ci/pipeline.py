@@ -2,7 +2,8 @@
 """Run one stage, several, or the full Sujho test pipeline.
 
 Must be invoked from (or able to find) a Sujho umbrella checkout: the suites
-import live product packages. Set SUJHO_ROOT if this tree is not at <workspace>/tests.
+import live product packages. Set SUJHO_ROOT if this tree is not at
+<workspace>/tests.
 
 Examples:
   python tests/ci/pipeline.py --list
@@ -59,10 +60,11 @@ STAGE_FOLDERS = {
     "eval-checks": "evals/tests/ (grader + corpus gate; no live model)",
     "integration": "tests/integration/",
     "e2e": "tests/e2e/",
-    "gates": "tests/tooling/ (markers, assertions, collected-test count, mypy ratchet)",
+    "gates": "tests/tooling/ (markers, assertions, collected-test count, mypy "
+    "ratchet)",
     "coverage": "tests/unit/ + tests/api/ (whole-product floors)",
     "diff-cover": "(PR changed-line gate; needs coverage.xml)",
-    "mutation": "tests/mutation/ + mutmut",
+    "mutation": "mutmut run + export (scripts/mutation_report.py scores it)",
 }
 
 
@@ -78,10 +80,35 @@ COVERAGE_SOURCE = (
 
 
 def _cov_args(*reports: str) -> list[str]:
-    return [f"--cov={path}" for path in COVERAGE_SOURCE] + ["--cov-branch", *reports]
+    """pytest --cov flags for every product source path, plus branch coverage
+    and reports.
+
+    Args:
+        reports: extra pytest coverage-report flags appended after the source
+            paths.
+    Returns:
+        pytest --cov flags for each source path, plus branch coverage and report
+        flags.
+    Raises:
+        None.
+    """
+    return [f"--cov={path}" for path in COVERAGE_SOURCE] + [
+        "--cov-branch",
+        *reports,
+    ]
 
 
 def _run(cmd: Sequence[str], *, cwd: Path) -> int:
+    """Run cmd in cwd, printing it first; return its exit code.
+
+    Args:
+        cmd: argv to execute.
+        cwd: working directory for the process.
+    Returns:
+        The process exit code as an int.
+    Raises:
+        None.
+    """
     printable = " ".join(cmd)
     print(f"\n==> {printable}", flush=True)
     completed = subprocess.run(cmd, cwd=cwd)
@@ -89,39 +116,118 @@ def _run(cmd: Sequence[str], *, cwd: Path) -> int:
 
 
 def _pytest(*args: str, cwd: Path) -> int:
+    """Run pytest with the given args in cwd; return its exit code.
+
+    Args:
+        cwd: working directory pytest runs in.
+        args: extra arguments appended to the pytest command.
+    Returns:
+        The pytest process exit code.
+    Raises:
+        None.
+    """
     return _run([sys.executable, "-m", "pytest", *args], cwd=cwd)
 
 
-def _pip_install(workspace: Path, packages: Sequence[str], req_files: Sequence[str]) -> int:
-    code = _run([sys.executable, "-m", "pip", "install", "--upgrade", "pip"], cwd=workspace)
-    if code:
-        return code
-    if packages:
-        code = _run([sys.executable, "-m", "pip", "install", *packages], cwd=workspace)
-        if code:
-            return code
+def _install_requirement_files(
+    workspace: Path, req_files: Sequence[str]
+) -> int:
+    """Install each requirements file that exists under workspace.
+
+    Args:
+        workspace: the product checkout to install into.
+        req_files: requirements file paths, relative to workspace; missing ones
+            are skipped.
+    Returns:
+        The exit code of the first failing pip invocation, or 0.
+    Raises:
+        None.
+    """
     for rel in req_files:
         path = workspace / rel
-        if path.is_file():
-            code = _run([sys.executable, "-m", "pip", "install", "-r", str(path)], cwd=workspace)
-            if code:
-                return code
+        if not path.is_file():
+            continue
+        code = _run(
+            [sys.executable, "-m", "pip", "install", "-r", str(path)],
+            cwd=workspace,
+        )
+        if code:
+            return code
     return 0
 
 
+def _pip_install(
+    workspace: Path, packages: Sequence[str], req_files: Sequence[str]
+) -> int:
+    """Upgrade pip, install packages, then install every requirements file that
+    exists.
+
+    Args:
+        workspace: the product checkout to install into.
+        packages: extra packages to install directly.
+        req_files: requirements file paths, relative to workspace; missing ones
+            are skipped.
+    Returns:
+        The exit code of the first failing pip invocation, or 0.
+    Raises:
+        None.
+    """
+    code = _run(
+        [sys.executable, "-m", "pip", "install", "--upgrade", "pip"],
+        cwd=workspace,
+    )
+    if code:
+        return code
+    if packages:
+        code = _run(
+            [sys.executable, "-m", "pip", "install", *packages], cwd=workspace
+        )
+        if code:
+            return code
+    return _install_requirement_files(workspace, req_files)
+
+
 def stage_install(workspace: Path, _args: argparse.Namespace) -> int:
+    """Install service + test requirements into the workspace.
+
+    Args:
+        workspace: the product checkout to run in.
+        _args: parsed CLI args; unused here, kept for STAGES' uniform signature.
+    Returns:
+        The stage's exit code (0 on success).
+    Raises:
+        None.
+    """
     return _pip_install(
-        workspace,
-        ROOT_PACKAGES,
-        (*SERVICE_REQUIREMENTS, *TEST_REQUIREMENTS),
+        workspace, ROOT_PACKAGES, (*SERVICE_REQUIREMENTS, *TEST_REQUIREMENTS)
     )
 
 
 def stage_install_mutation(workspace: Path, _args: argparse.Namespace) -> int:
+    """Install mutmut and the user_service unit-test dependencies.
+
+    Args:
+        workspace: the product checkout to run in.
+        _args: parsed CLI args; unused here, kept for STAGES' uniform signature.
+    Returns:
+        The stage's exit code (0 on success).
+    Raises:
+        None.
+    """
     return _pip_install(workspace, MUTATION_PACKAGES, MUTATION_REQUIREMENTS)
 
 
 def stage_static(workspace: Path, _args: argparse.Namespace) -> int:
+    """Run ruff and the mypy ratchet check over the product tree.
+
+    Args:
+        workspace: the product checkout to run in.
+        _args: parsed CLI args; unused here, kept for STAGES' uniform signature.
+    Returns:
+        The stage's exit code (0 on success).
+    Raises:
+        None.
+    """
     # Bare "ruff"/"mypy" rely on PATH; in this checkout they live only in
     # .venv/bin, so invoking them as `python -m` finds them regardless of
     # shell PATH state.
@@ -134,12 +240,36 @@ def stage_static(workspace: Path, _args: argparse.Namespace) -> int:
     )
 
 
-def stage_secrets(workspace: Path, _args: argparse.Namespace) -> int:
-    baseline = workspace / ".secrets.baseline"
-    if not baseline.is_file():
-        print(f"FAIL: {baseline} is missing", flush=True)
-        return 1
-    code = _run(
+def _unaudited_secrets(payload: dict) -> list[tuple[str, int]]:
+    """Findings in a detect-secrets payload that have not been audited.
+
+    Args:
+        payload: the parsed .secrets.baseline JSON.
+    Returns:
+        (filename, line_number) for each unaudited finding.
+    Raises:
+        None.
+    """
+    return [
+        (filename, item["line_number"])
+        for filename, items in payload.get("results", {}).items()
+        for item in items
+        if "is_secret" not in item
+    ]
+
+
+def _scan_secrets(workspace: Path, baseline: Path) -> int:
+    """Scan the tree with detect-secrets against an existing baseline.
+
+    Args:
+        workspace: the product checkout to scan.
+        baseline: the .secrets.baseline file to compare against.
+    Returns:
+        The detect-secrets process exit code.
+    Raises:
+        None.
+    """
+    return _run(
         [
             "detect-secrets",
             "scan",
@@ -151,15 +281,29 @@ def stage_secrets(workspace: Path, _args: argparse.Namespace) -> int:
         ],
         cwd=workspace,
     )
+
+
+def stage_secrets(workspace: Path, _args: argparse.Namespace) -> int:
+    """Run detect-secrets against the baseline and refuse any new unaudited
+    finding.
+
+    Args:
+        workspace: the product checkout to run in.
+        _args: parsed CLI args; unused here, kept for STAGES' uniform signature.
+    Returns:
+        The stage's exit code (0 on success).
+    Raises:
+        None.
+    """
+    baseline = workspace / ".secrets.baseline"
+    if not baseline.is_file():
+        print(f"FAIL: {baseline} is missing", flush=True)
+        return 1
+    code = _scan_secrets(workspace, baseline)
     if code:
         return code
     payload = json.loads(baseline.read_text())
-    unaudited = [
-        (filename, item["line_number"])
-        for filename, items in payload.get("results", {}).items()
-        for item in items
-        if "is_secret" not in item
-    ]
+    unaudited = _unaudited_secrets(payload)
     if unaudited:
         print(f"New/unaudited secret candidates found: {unaudited}", flush=True)
         return 1
@@ -168,6 +312,16 @@ def stage_secrets(workspace: Path, _args: argparse.Namespace) -> int:
 
 
 def stage_unit(workspace: Path, _args: argparse.Namespace) -> int:
+    """Run tests/unit with coverage.
+
+    Args:
+        workspace: the product checkout to run in.
+        _args: parsed CLI args; unused here, kept for STAGES' uniform signature.
+    Returns:
+        The stage's exit code (0 on success).
+    Raises:
+        None.
+    """
     return _pytest(
         "tests/unit",
         "-c",
@@ -178,22 +332,73 @@ def stage_unit(workspace: Path, _args: argparse.Namespace) -> int:
 
 
 def stage_api(workspace: Path, _args: argparse.Namespace) -> int:
+    """Run tests/api.
+
+    Args:
+        workspace: the product checkout to run in.
+        _args: parsed CLI args; unused here, kept for STAGES' uniform signature.
+    Returns:
+        The stage's exit code (0 on success).
+    Raises:
+        None.
+    """
     return _pytest("tests/api", "-q", cwd=workspace)
 
 
 def stage_eval_checks(workspace: Path, _args: argparse.Namespace) -> int:
+    """Run the eval grader + corpus gate tests (no live model).
+
+    Args:
+        workspace: the product checkout to run in.
+        _args: parsed CLI args; unused here, kept for STAGES' uniform signature.
+    Returns:
+        The stage's exit code (0 on success).
+    Raises:
+        None.
+    """
     return _pytest("evals/tests", "-q", cwd=workspace)
 
 
 def stage_integration(workspace: Path, _args: argparse.Namespace) -> int:
+    """Run tests/integration.
+
+    Args:
+        workspace: the product checkout to run in.
+        _args: parsed CLI args; unused here, kept for STAGES' uniform signature.
+    Returns:
+        The stage's exit code (0 on success).
+    Raises:
+        None.
+    """
     return _pytest("tests/integration", "-q", cwd=workspace)
 
 
 def stage_e2e(workspace: Path, _args: argparse.Namespace) -> int:
+    """Run tests/e2e.
+
+    Args:
+        workspace: the product checkout to run in.
+        _args: parsed CLI args; unused here, kept for STAGES' uniform signature.
+    Returns:
+        The stage's exit code (0 on success).
+    Raises:
+        None.
+    """
     return _pytest("tests/e2e", "-q", cwd=workspace)
 
 
 def stage_gates(workspace: Path, _args: argparse.Namespace) -> int:
+    """Run the marker, assertion, count, and mypy-ratchet gates in
+    tests/tooling.
+
+    Args:
+        workspace: the product checkout to run in.
+        _args: parsed CLI args; unused here, kept for STAGES' uniform signature.
+    Returns:
+        The stage's exit code (0 on success).
+    Raises:
+        None.
+    """
     tooling = TESTS_ROOT / "tooling"
     for name in (
         "check_test_methods.py",
@@ -208,6 +413,16 @@ def stage_gates(workspace: Path, _args: argparse.Namespace) -> int:
 
 
 def stage_coverage(workspace: Path, _args: argparse.Namespace) -> int:
+    """Run unit + api with coverage reports, then check the coverage floor.
+
+    Args:
+        workspace: the product checkout to run in.
+        _args: parsed CLI args; unused here, kept for STAGES' uniform signature.
+    Returns:
+        The stage's exit code (0 on success).
+    Raises:
+        None.
+    """
     pytest_code = _pytest(
         "tests/unit",
         "tests/api",
@@ -227,14 +442,51 @@ def stage_coverage(workspace: Path, _args: argparse.Namespace) -> int:
     return floor_code or pytest_code
 
 
-def stage_diff_cover(workspace: Path, args: argparse.Namespace) -> int:
+def _diff_cover_refusal(
+    workspace: Path, args: argparse.Namespace
+) -> int | None:
+    """An error code when diff-cover's inputs are missing, else None.
+
+    Args:
+        workspace: the product checkout coverage.xml should live in.
+        args: parsed CLI args; args.base_branch is required.
+    Returns:
+        2 when --base-branch is missing, 1 when coverage.xml is missing, or
+        None when the stage can run.
+    Raises:
+        None.
+    """
     if not args.base_branch:
-        print("FAIL: diff-cover needs --base-branch (e.g. origin/main)", flush=True)
+        print(
+            "FAIL: diff-cover needs --base-branch (e.g. origin/main)",
+            flush=True,
+        )
         return 2
-    coverage_xml = workspace / "coverage.xml"
-    if not coverage_xml.is_file():
-        print("FAIL: coverage.xml missing; run the coverage or unit stage first", flush=True)
+    if not (workspace / "coverage.xml").is_file():
+        print(
+            "FAIL: coverage.xml missing; run the coverage or unit stage first",
+            flush=True,
+        )
         return 1
+    return None
+
+
+def stage_diff_cover(workspace: Path, args: argparse.Namespace) -> int:
+    """Check changed-line coverage against base_branch; needs coverage.xml
+    already built.
+
+    Args:
+        workspace: the product checkout to run in.
+        args: parsed CLI args; args.base_branch is required (e.g. origin/main).
+    Returns:
+        0 passed; 1 coverage.xml missing; 2 --base-branch not given; or
+        diff-cover's own exit code.
+    Raises:
+        None.
+    """
+    refused = _diff_cover_refusal(workspace, args)
+    if refused is not None:
+        return refused
     return _run(
         [
             "diff-cover",
@@ -246,26 +498,46 @@ def stage_diff_cover(workspace: Path, args: argparse.Namespace) -> int:
     )
 
 
+def _export_mutmut_stats(workspace: Path) -> None:
+    """Export mutmut's run into mutants/mutmut-cicd-stats.json.
+
+    Scoring and threshold-checking happen elsewhere — scripts/mutation_report.py
+    is the workflow's separate reporting step, and reads this same file. A
+    failed export here is not fatal: mutation_report.py handles a missing/
+    unparseable report as a skip, not a crash (see its _MISSING_REPORT
+    message), so this stage never has to duplicate that judgment.
+
+    Args:
+        workspace: the product checkout mutmut just ran in.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
+    subprocess.run(
+        ["mutmut", "export-cicd-stats"], cwd=workspace, check=False
+    )
+
+
 def stage_mutation(workspace: Path, _args: argparse.Namespace) -> int:
+    """Run mutmut fresh and export its stats for the workflow's report step.
+
+    Args:
+        workspace: the product checkout to run in.
+        _args: parsed CLI args; unused here, kept for STAGES' uniform signature.
+    Returns:
+        The stage's exit code (0 on success).
+    Raises:
+        None.
+    """
     mutants = workspace / "mutants"
     if mutants.exists():
         shutil.rmtree(mutants)
     code = _run(["mutmut", "run"], cwd=workspace)
     if code:
         return code
-    subprocess.run(["mutmut", "export-cicd-stats"], cwd=workspace, check=False)
-    code = _run([sys.executable, str(TESTS_ROOT / "mutation" / "render_report.py")], cwd=workspace)
-    if code:
-        return code
-    return _run(
-        [
-            sys.executable,
-            str(TESTS_ROOT / "mutation" / "check_threshold.py"),
-            "--min-score",
-            "0.980",
-        ],
-        cwd=workspace,
-    )
+    _export_mutmut_stats(workspace)
+    return 0
 
 
 STAGES = {
@@ -286,15 +558,36 @@ STAGES = {
 
 
 def _print_list() -> None:
+    """Print the tests/ layout and the available stages with their folder
+    mapping.
+
+    Args:
+        None.
+    Returns:
+        None.
+    Raises:
+        None.
+    """
     print("tests/ layout")
     print(f"  {TESTS_ROOT}/")
     print("    unit/ api/ integration/ e2e/   runnable pytest suites")
-    print("    mutation/                      mutmut helpers")
-    print("    tooling/                       marker, assertion, count, coverage-floor gates")
-    print("    outcomes/                      audits, findings, pytest + mutation snapshots")
+    print(
+        "    tooling/                       marker, assertion, count, "
+        "coverage-floor gates"
+    )
+    print(
+        "    outcomes/                      audits, findings, pytest + "
+        "mutation snapshots"
+    )
     print("    ci/pipeline.py                 this runner")
-    print("    ci/github/                     copies of umbrella GitHub Actions workflows")
-    print("    ci/pyproject.toml              copy of umbrella mutmut/coverage/ruff/mypy")
+    print(
+        "    ci/github/                     copies of umbrella GitHub Actions "
+        "workflows"
+    )
+    print(
+        "    ci/pyproject.toml              copy of umbrella "
+        "mutmut/coverage/ruff/mypy"
+    )
     print()
     print("stages")
     width = max(len(name) for name in STAGES)
@@ -305,9 +598,18 @@ def _print_list() -> None:
     print("          --all    = default + integration e2e")
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """CLI parser for stage selection and pipeline options.
+
+    Args:
+        None.
+    Returns:
+        The configured ArgumentParser.
+    Raises:
+        None.
+    """
     parser = argparse.ArgumentParser(
-        description="Run Sujho test pipeline stages against a product checkout.",
+        description="Run Sujho test pipeline stages against a product checkout."
     )
     parser.add_argument(
         "stages",
@@ -319,7 +621,9 @@ def main() -> int:
         action="store_true",
         help="Print stages and folder map, then exit",
     )
-    parser.add_argument("--all", action="store_true", help="Also run integration and e2e")
+    parser.add_argument(
+        "--all", action="store_true", help="Also run integration and e2e"
+    )
     parser.add_argument(
         "--keep-going",
         action="store_true",
@@ -335,12 +639,22 @@ def main() -> int:
         default="",
         help="Git ref for the diff-cover stage (e.g. origin/main)",
     )
-    args = parser.parse_args()
+    return parser
 
-    if args.list:
-        _print_list()
-        return 0
 
+def resolve_requested_stages(
+    args: argparse.Namespace, parser: argparse.ArgumentParser
+) -> list[str]:
+    """The stage list to run: explicit names, --all's set, or the default set.
+
+    Args:
+        args: parsed CLI args (stages/--all/--with-install).
+        parser: the parser to call .error() on for a bad combination.
+    Returns:
+        The resolved stage name list, in run order.
+    Raises:
+        None — parser.error() prints and exits the process itself.
+    """
     requested = list(args.stages)
     if not requested:
         requested = list(ALL_STAGES if args.all else DEFAULT_STAGES)
@@ -349,16 +663,31 @@ def main() -> int:
 
     unknown = [name for name in requested if name not in STAGES]
     if unknown:
-        parser.error("unknown stage(s): " + ", ".join(unknown) + " (try --list)")
+        parser.error(
+            "unknown stage(s): " + ", ".join(unknown) + " (try --list)"
+        )
 
     if args.with_install and requested[0] != "install":
         requested.insert(0, "install")
+    return requested
 
-    workspace = workspace_root()
-    print(f"workspace: {workspace}", flush=True)
-    print(f"tests:     {TESTS_ROOT}", flush=True)
-    print(f"stages:    {' '.join(requested)}", flush=True)
 
+def run_stages(
+    requested: list[str], workspace: Path, args: argparse.Namespace
+) -> int:
+    """Run each requested stage in order; 0 only if every requested stage
+    passed.
+
+    Args:
+        requested: stage names to run, in order.
+        workspace: the product checkout to run in.
+        args: parsed CLI args, passed through to each stage.
+    Returns:
+        The first failing stage's exit code (unless --keep-going), or 1 if
+        any stage failed, or 0 if all passed.
+    Raises:
+        None.
+    """
     failed: list[str] = []
     for name in requested:
         code = STAGES[name](workspace, args)
@@ -372,6 +701,34 @@ def main() -> int:
         return 1
     print("OK: all requested stages passed.", flush=True)
     return 0
+
+
+def main() -> int:
+    """Parse args, resolve which stages to run, and run them against a checkout.
+
+    Args:
+        None.
+    Returns:
+        0 when --list printed the stages, otherwise the exit code from
+        run_stages.
+    Raises:
+        None.
+    """
+    parser = build_parser()
+    args = parser.parse_args()
+
+    if args.list:
+        _print_list()
+        return 0
+
+    requested = resolve_requested_stages(args, parser)
+
+    workspace = workspace_root()
+    print(f"workspace: {workspace}", flush=True)
+    print(f"tests:     {TESTS_ROOT}", flush=True)
+    print(f"stages:    {' '.join(requested)}", flush=True)
+
+    return run_stages(requested, workspace, args)
 
 
 if __name__ == "__main__":

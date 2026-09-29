@@ -26,6 +26,5 @@ docs/
 phase2/IAM-table.md
 phase2/jobs/EXAMPLE-knowledge-store-sessions.md
 phase2/jobs/README.md
-phase2/pointer-bump/README.md
 tests/README.md
 tests/outcomes/*.md
