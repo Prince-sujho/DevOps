@@ -2,8 +2,6 @@
 
 Plan only. Nothing applied. Scripts stay dry-run until `--apply`.
 
-Decisions: `docs/decisions-24-09-26.md`. Merge: `docs/full-repo-merge-plan.md`.
-
 phase0 first, then phase1 and phase2. phase3 stays off.
 
 1. The engineer tries the feature in `sujho-dev`. No CI.
