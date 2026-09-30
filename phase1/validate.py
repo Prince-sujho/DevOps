@@ -435,8 +435,13 @@ class RulesetTests(unittest.TestCase):
             types = [r["type"] for r in load_ruleset(name)["rules"]]
             self.assertNotIn("required_status_checks", types, name)
 
-    def test_main_hotfix_bypass_is_org_admin_pr_only(self) -> None:
-        """main.json's bypass is restricted to org admins in pull_request mode.
+    def test_main_has_no_bypass_actor(self) -> None:
+        # An org admin with "bypass in pull_request mode" can merge their own
+        # PR without the Lead's Code Owner approval — which is exactly the
+        # thing Phase 1 exists to prevent. Break-glass is a Lead editing the
+        # ruleset (audit-logged) and re-running apply-phase1.sh afterwards,
+        # not a standing exemption.
+        """main.json lets nobody bypass the Lead gate.
 
         Args:
             None.
@@ -445,7 +450,22 @@ class RulesetTests(unittest.TestCase):
         Raises:
             None.
         """
-        self.assertTrue(bypass_is_org_admin_pr_only(load_ruleset("main.json")))
+        self.assertEqual(load_ruleset("main.json")["bypass_actors"], [])
+
+    def test_light_touch_bypass_is_org_admin_pr_only(self) -> None:
+        """The light-touch repos' bypass stays restricted to org admins in
+        pull_request mode.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        self.assertTrue(
+            bypass_is_org_admin_pr_only(load_ruleset("light-touch-main.json"))
+        )
 
     def test_no_ruleset_allows_direct_push_bypass(self) -> None:
         """No ruleset's bypass actor allows an always (direct push) bypass.

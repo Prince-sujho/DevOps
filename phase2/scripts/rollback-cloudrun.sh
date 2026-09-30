@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Shifts Cloud Run traffic to a previous revision. No rebuild, no retagging.
-# Empty --revision: newest served=true revision older than the one serving.
+# Empty --revision: the revision the service's own `prev` tag records as the
+# last known good one before the current deploy (pick_rollback_revision.py).
 #
 # Dry-run by default, matching every other mutating script in this repo —
 # --apply is required to actually shift traffic.
@@ -56,19 +57,34 @@ run() {
   "$@"
 }
 
-if [ -z "$REVISION" ]; then
-  if [ "$APPLY" -ne 1 ]; then
-    echo "DRY-RUN would query GCP and pick the newest served=true revision of"
-    echo "${SERVICE} in ${PROJECT} older than the one currently serving."
-    echo "DRY-RUN would refuse if the serving revision has no served=true label,"
-    echo "or if no older served=true revision exists."
+OLD_SERVING=""
+HAD_PREV=""
+
+if [ "$APPLY" -ne 1 ]; then
+  if [ -z "$REVISION" ]; then
+    echo "DRY-RUN would query GCP for ${SERVICE} in ${PROJECT} and roll to the"
+    echo "revision its 'prev' tag records as the last known good one."
+    echo "DRY-RUN would refuse if there is no 'prev' tag, if it points at the"
+    echo "revision already serving, or if that revision is no longer Ready —"
+    echo "in every case asking for an explicit --revision instead of guessing."
     REVISION="WOULD_QUERY"
-  else
-    tmp="$(mktemp -d "${TMPDIR:-/tmp}/rollback.XXXXXX")"
-    trap 'rm -rf "$tmp"' EXIT
-    gcloud run services describe "$SERVICE" \
-      --project="$PROJECT" --region="$REGION" --format=json \
-      > "$tmp/service.json"
+  fi
+  echo "DRY-RUN would then move the 'lkg' tag onto the revision rolled to and"
+  echo "drop 'prev', so a later rollback can never land back on the revision"
+  echo "this one is fleeing."
+else
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/rollback.XXXXXX")"
+  trap 'rm -rf "$tmp"' EXIT
+  gcloud run services describe "$SERVICE" \
+    --project="$PROJECT" --region="$REGION" --format=json \
+    > "$tmp/service.json"
+  OLD_SERVING="$(
+    python3 "${HERE}/pick_rollback_revision.py" --print-current "$tmp/service.json"
+  )"
+  HAD_PREV="$(
+    python3 "${HERE}/pick_rollback_revision.py" --print-tag prev "$tmp/service.json"
+  )"
+  if [ -z "$REVISION" ]; then
     gcloud run revisions list --service="$SERVICE" \
       --project="$PROJECT" --region="$REGION" --format=json \
       > "$tmp/revisions.json"
@@ -86,3 +102,21 @@ run gcloud run services update-traffic "$SERVICE" \
   --to-revisions="${REVISION}=100" \
   --quiet
 echo "Traffic is on ${REVISION}."
+
+# Re-point the markers. The revision now serving is the known-good one, and
+# there is no longer a recorded good revision older than it — dropping 'prev'
+# is what stops a later rollback landing back on ${OLD_SERVING}, the revision
+# this rollback is fleeing. The next deploy sets both tags again.
+run gcloud run services update-traffic "$SERVICE" \
+  --project="$PROJECT" --region="$REGION" \
+  --update-tags="lkg=${REVISION}" \
+  --quiet
+if [ "$APPLY" -ne 1 ] || [ -n "$HAD_PREV" ]; then
+  run gcloud run services update-traffic "$SERVICE" \
+    --project="$PROJECT" --region="$REGION" \
+    --remove-tags=prev \
+    --quiet
+fi
+if [ -n "$OLD_SERVING" ]; then
+  echo "lkg is now ${REVISION}; ${OLD_SERVING} is no longer a rollback target."
+fi

@@ -20,9 +20,11 @@ jobs:
     runs-on: [self-hosted, mutation]
     timeout-minutes: 720
     steps:
+      # Post-phase0: sujho has no submodules to recurse into (the 8 backend
+      # repos are plain subdirectories now, not gitlinks).
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          submodules: recursive
+          persist-credentials: false
 
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
@@ -35,6 +37,13 @@ jobs:
         id: mutmut
         continue-on-error: true
         run: python tests/ci/pipeline.py mutation
+
+      # A crashed mutmut run must be visible, not just an absent report:
+      # the annotation shows on the run summary, and mutation_report.py
+      # records "no report" as flag_review for the tracking issue.
+      - name: Say so if mutmut itself failed
+        if: steps.mutmut.outcome == 'failure'
+        run: echo "::warning title=mutmut run failed::see the mutmut run step log"
 
       - name: Report (never fails the job)
         run: python3 scripts/mutation_report.py --report mutants/mutmut-cicd-stats.json

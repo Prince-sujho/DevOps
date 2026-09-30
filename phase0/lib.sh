@@ -13,23 +13,26 @@ ORG="Sujho"
 PHASE0_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APPLY=0
 OUTPUT=""
+AT_PINNED=0
 
 die() { echo "error: $*" >&2; exit 1; }
 
 parse_apply_flag() {
   APPLY=0
   OUTPUT=""
+  AT_PINNED=0
   local arg
   while [ $# -gt 0 ]; do
     case "$1" in
       --apply) APPLY=1 ;;
+      --at-pinned) AT_PINNED=1 ;;
       --output)
         shift
         [ $# -gt 0 ] || die "--output needs a path"
         OUTPUT="$1"
         ;;
       -h|--help) return 2 ;;
-      *) die "unknown argument: $1 (allowed: --apply --output PATH)" ;;
+      *) die "unknown argument: $1 (allowed: --apply --at-pinned --output PATH)" ;;
     esac
     shift
   done

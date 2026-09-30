@@ -2,6 +2,13 @@ name: Deploy Cloud Run service (Pre-Prod)
 
 # Manual only. Merge to main does not run this.
 # Runs entirely inside sujho-preprod. sujho-dev is never touched by this file.
+#
+# The exact commit is checked out here (full history, no stored GitHub
+# token) and uploaded to Cloud Build as real source. Nothing is fetched from
+# GitHub inside Cloud Build, so no GitHub credential ever lives there.
+#
+# GCP trusts this job by its OIDC subject, repo:Sujho/sujho:ref:refs/heads/main
+# (see phase2/scripts/provision-wif.sh) — not by "any workflow in the repo".
 
 on:
   workflow_dispatch:
@@ -23,6 +30,14 @@ on:
         required: false
         type: string
         default: ""
+      baseline:
+        description: >-
+          Only for a service's first deploy, or to re-baseline on purpose —
+          the full 40-character commit the semgrep/mypy gates compare
+          against. Empty = whatever is live now.
+        required: false
+        type: string
+        default: ""
 
 concurrency:
   group: cloudrun-sujho-preprod-${{ inputs.service }}
@@ -37,40 +52,68 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.resolve.outputs.sha }}
+      baseline: ${{ steps.resolve.outputs.baseline }}
     steps:
       - name: Refuse unless this run is on main
         run: |
-          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
-            echo "Refuse: dispatch from main, not ${{ github.ref }}"
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "Refuse: dispatch from main, not $GITHUB_REF"
             exit 1
           fi
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Resolve commit and refuse unless it's an ancestor of main
         id: resolve
+        env:
+          COMMIT_INPUT: ${{ inputs.commit }}
+          BASELINE_INPUT: ${{ inputs.baseline }}
         run: |
           set -euo pipefail
-          SHA="${{ inputs.commit }}"
-          if [ -z "$SHA" ]; then
-            SHA="$(git rev-parse origin/main)"
+          # fetch-depth: 0 already brought every branch, so origin/main is here
+          if [ -z "$COMMIT_INPUT" ]; then
+            SHA="$(git rev-parse --verify origin/main)"
+          else
+            if ! printf '%s' "$COMMIT_INPUT" | grep -Eq '^[0-9a-f]{7,40}$'; then
+              echo "Refuse: commit must be 7-40 lowercase hex characters."
+              exit 1
+            fi
+            SHA="$(git rev-parse --verify "${COMMIT_INPUT}^{commit}")"
           fi
-          git fetch origin main
           if ! git merge-base --is-ancestor "$SHA" origin/main; then
             echo "Refuse: $SHA is not on main. Nothing unreviewed deploys from here."
             exit 1
           fi
+          BASELINE=""
+          if [ -n "$BASELINE_INPUT" ]; then
+            if ! printf '%s' "$BASELINE_INPUT" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "Refuse: baseline must be a full 40-character commit SHA."
+              exit 1
+            fi
+            git cat-file -e "${BASELINE_INPUT}^{commit}"
+            if ! git merge-base --is-ancestor "$BASELINE_INPUT" "$SHA"; then
+              echo "Refuse: baseline $BASELINE_INPUT is not an ancestor of $SHA."
+              exit 1
+            fi
+            BASELINE="$BASELINE_INPUT"
+          fi
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "baseline=$BASELINE" >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: validate
     runs-on: ubuntu-latest
     steps:
+      # full history: the baseline gates diff against the deployed commit.
+      # No stored token: the uploaded .git must not carry one.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ needs.validate.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
 
       - uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
         with:
@@ -83,15 +126,41 @@ jobs:
         env:
           SERVICE: ${{ inputs.service }}
           SHA: ${{ needs.validate.outputs.sha }}
+          BASELINE: ${{ needs.validate.outputs.baseline }}
         run: |
           set -euo pipefail
-          SHORT="$(printf '%s' "$SHA" | cut -c1-7)"
-          CFG="$(jq -r --arg s "$SERVICE" '.[$s]' ci/services.json)"
+          SHORT="$(printf '%s' "$SHA" | cut -c1-12)"
+          # Per-environment config: the base entry merged with its
+          # overrides.preprod block, so Pre-Prod and Prod can differ (instance
+          # counts, VPC egress) without a second copy of the file.
+          CFG="$(jq -c --arg s "$SERVICE" --arg env preprod '
+            if has($s)
+            then (.[$s] | del(.overrides)) * (.[$s].overrides[$env] // {})
+            else null end' ci/services.json)"
           if [ "$CFG" = "null" ]; then
             echo "Refuse: $SERVICE is not in ci/services.json"
             exit 1
           fi
-          RUN_ARGS="$(echo "$CFG" | jq -r '.run_args | join(" ")')"
+          RUN_ARGS="$(echo "$CFG" | jq -r '.run_args // [] | join(" ")')"
+          RUNTIME_SA="$(echo "$CFG" | jq -r '.runtime_sa // ""')"
+          # ';' not ',': --substitutions is a comma-separated list, so a comma
+          # inside any value below would silently become a new substitution.
+          SECRETS="$(echo "$CFG" | jq -r '.secrets // [] | join(";")')"
+          ENV_VARS="$(echo "$CFG" | jq -r '.env // [] | join(";")')"
+          if [ -z "$RUNTIME_SA" ]; then
+            echo "Refuse: $SERVICE has no runtime_sa in ci/services.json."
+            echo "Deploying without one runs the container as the project's"
+            echo "default compute account."
+            exit 1
+          fi
+          case "$RUN_ARGS$SECRETS$ENV_VARS" in
+            *,*)
+              echo "Refuse: $SERVICE config contains a comma, which would"
+              echo "split the substitutions string. Use ';' between secrets"
+              echo "and env entries; run_args cannot contain one at all."
+              exit 1
+              ;;
+          esac
 
           # one quoted string: values with spaces (_RUN_ARGS) stay one substitution
           SUBS="_SERVICE_NAME=$SERVICE"
@@ -104,10 +173,21 @@ jobs:
           SUBS+=",_MAX_INSTANCES=$(echo "$CFG" | jq -r '.max_instances // "10"')"
           SUBS+=",_VERIFY_METHOD=$(echo "$CFG" | jq -r '.verify // "health"')"
           SUBS+=",_RUN_ARGS=$RUN_ARGS"
+          SUBS+=",_RUNTIME_SA=$RUNTIME_SA"
+          SUBS+=",_SECRETS=$SECRETS"
+          SUBS+=",_ENV_VARS=$ENV_VARS"
           SUBS+=",_COMMIT_SHA=$SHA"
           SUBS+=",_SHORT_SHA=$SHORT"
+          SUBS+=",_BASELINE_SHA=$BASELINE"
 
-          gcloud builds submit --no-source \
+          # Upload everything tracked, .git included (the baseline gates need
+          # history) — but never the credentials file the auth step wrote.
+          IGNORE="$RUNNER_TEMP/build.gcloudignore"
+          printf '%s\n' '# upload the checkout as-is, .git included' 'gha-creds-*.json' > "$IGNORE"
+
+          gcloud builds submit . \
+            --ignore-file="$IGNORE" \
+            --gcs-source-staging-dir=gs://sujho-preprod-build-source/source \
             --project=sujho-preprod \
             --region=asia-south1 \
             --config=ci/build-deploy.yaml \

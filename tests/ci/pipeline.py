@@ -57,7 +57,7 @@ STAGE_FOLDERS = {
     "secrets": "(.secrets.baseline at workspace root)",
     "unit": "tests/unit/",
     "api": "tests/api/",
-    "eval-checks": "evals/tests/ (grader + corpus gate; no live model)",
+    "eval-checks": "Eval-Suite/tests/ (grader + corpus gate; no live model)",
     "integration": "tests/integration/",
     "e2e": "tests/e2e/",
     "gates": "tests/tooling/ (markers, assertions, collected-test count, mypy "
@@ -356,7 +356,7 @@ def stage_eval_checks(workspace: Path, _args: argparse.Namespace) -> int:
     Raises:
         None.
     """
-    return _pytest("evals/tests", "-q", cwd=workspace)
+    return _pytest("Eval-Suite/tests", "-q", cwd=workspace)
 
 
 def stage_integration(workspace: Path, _args: argparse.Namespace) -> int:

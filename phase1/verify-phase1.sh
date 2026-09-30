@@ -11,7 +11,7 @@
 usage() {
   cat <<'EOF'
   ./verify-phase1.sh           # validate.py only (no GitHub)
-  ./verify-phase1.sh --remote  # CODEOWNERS + main + branch-naming rulesets, no extra branch rulesets
+  ./verify-phase1.sh --remote  # CODEOWNERS + main/branch-naming rulesets, no dev/pre-prod
 EOF
 }
 
@@ -46,8 +46,8 @@ ruleset_id() {
 
 # Compares a live ruleset against the local JSON apply-phase1.sh installed:
 # same branches targeted, every rule type still present, every rule
-# parameter unchanged. bypass=exact also requires the single
-# OrganizationAdmin:pull_request actor.
+# parameter unchanged. bypass=none also requires that nobody can bypass the
+# ruleset at all (main.json); bypass=any only forbids a direct-push bypass.
 ruleset_matches() {
   local remote="$1" local_json="$2" bypass="$3"
   python3 - "$remote" "$local_json" "$bypass" <<'PY'
@@ -82,13 +82,13 @@ for rule_type, params in want_rules.items():
             errors.append(f"{rule_type}.{key} is {got!r}, want {value!r}")
 
 if "bypass_actors" not in remote:
-    print("warn: bypass_actors hidden (need admin to confirm hotfix bypass)", file=sys.stderr)
+    print("warn: bypass_actors hidden (need admin to confirm nobody can bypass)", file=sys.stderr)
 else:
     actors = [(a.get("actor_type"), a.get("bypass_mode")) for a in remote["bypass_actors"] or []]
     if any(mode == "always" for _, mode in actors):
         errors.append("allows always (direct-push) bypass")
-    elif bypass_mode == "exact" and actors and actors != [("OrganizationAdmin", "pull_request")]:
-        errors.append(f"bypass {actors}, want OrganizationAdmin:pull_request")
+    elif bypass_mode == "none" and actors:
+        errors.append(f"bypass {actors}, want no bypass actor at all")
 
 for error in errors:
     print(error, file=sys.stderr)
@@ -131,8 +131,8 @@ for REPO in "${FULL_TREATMENT_REPOS[@]}"; do
     continue
   fi
   gh api "repos/${ORG}/${REPO}/rulesets/${main_id}" > "${WORKDIR}/main.json"
-  if ruleset_matches "${WORKDIR}/main.json" "${PHASE1_DIR}/rulesets/main.json" exact; then
-    echo "ok   ${REPO}: main ruleset matches rulesets/main.json, no always-bypass"
+  if ruleset_matches "${WORKDIR}/main.json" "${PHASE1_DIR}/rulesets/main.json" none; then
+    echo "ok   ${REPO}: main ruleset matches rulesets/main.json, no bypass actor"
   else
     echo "FAIL ${REPO}: ruleset parameters do not match Phase 1"
     fail=1

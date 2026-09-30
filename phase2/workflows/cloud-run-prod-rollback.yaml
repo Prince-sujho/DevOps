@@ -1,7 +1,17 @@
 name: Rollback Cloud Run service (Prod)
 
-# Manual only. Shifts traffic to a previous revision — no rebuild, no relabelling.
-# Empty revision = newest served=true one older than what's currently serving.
+# Manual only. Shifts traffic to a previous revision — no rebuild. Afterwards
+# the `lkg` tag moves onto the revision rolled to and `prev` is dropped, so a
+# later rollback can never land back on the revision this one fled.
+# Empty revision = whatever the service's own `prev` tag records as the last
+# known good revision before the current deploy.
+#
+# `environment: production-rollback` — a Lead must be the one who runs/approves
+# it, and GCP trusts only that OIDC subject for the prod rollback account
+# (repo:Sujho/sujho:environment:production-rollback). Unlike `production`,
+# self-review stays allowed there: in an incident the Lead who starts the
+# rollback can approve it alone, but it is still a named, logged Lead action
+# and nobody outside the reviewer list can do it.
 
 on:
   workflow_dispatch:
@@ -34,16 +44,19 @@ permissions:
 
 jobs:
   rollback:
+    environment: production-rollback
     runs-on: ubuntu-latest
     steps:
       - name: Refuse unless this run is on main
         run: |
-          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
-            echo "Refuse: dispatch from main, not ${{ github.ref }}"
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "Refuse: dispatch from main, not $GITHUB_REF"
             exit 1
           fi
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
         with:

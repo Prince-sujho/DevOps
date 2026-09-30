@@ -6,5 +6,12 @@
 
 *                               @arnavtayal @abhishektayal2802
 
+# Listed after * on purpose: GitHub uses the LAST matching pattern, so these
+# stay Lead-owned even if somebody adds a broader rule above. Nothing runs on
+# a PR (decision 11), so a change to the deploy machinery is only ever caught
+# by the person reading the diff — and these are the files that decide what
+# reaches users.
+/.github/                       @arnavtayal @abhishektayal2802
 /ci/                            @arnavtayal @abhishektayal2802
-.github/                        @arnavtayal @abhishektayal2802
+/scripts/                       @arnavtayal @abhishektayal2802
+/jobs/                          @arnavtayal @abhishektayal2802

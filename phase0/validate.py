@@ -11,12 +11,20 @@ suite itself would fail loudly if that safety property were ever broken.
 from __future__ import annotations
 
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
 from collapse_ci_gitsource import collapse_dependencies, find_gitsource_blocks
-from merge_repos import is_fully_rewritten
+from merge_repos import (
+    drift_count,
+    drift_line,
+    gitlink_sha,
+    is_fully_rewritten,
+    nested_governance_paths,
+    same_source_tip,
+)
 
 HERE = Path(__file__).resolve().parent
 REPOS_JSON = HERE / "repos.json"
@@ -287,8 +295,8 @@ class TestIsFullyRewritten(unittest.TestCase):
             (dest / ".git").mkdir()
             self.assertFalse(is_fully_rewritten(dest, "user_service"))
 
-    def test_completed_rewrite_is_recognized(self) -> None:
-        """A dest with .git and the target/ subdirectory is True.
+    def test_a_target_directory_alone_is_not_a_rewrite(self) -> None:
+        """A dest with .git and target/ but no commit map is False.
 
         Args:
             None.
@@ -301,7 +309,50 @@ class TestIsFullyRewritten(unittest.TestCase):
             dest = Path(tmp)
             (dest / ".git").mkdir()
             (dest / "user_service").mkdir()
+            self.assertFalse(is_fully_rewritten(dest, "user_service"))
+
+    def test_completed_rewrite_is_recognized(self) -> None:
+        """A dest with .git, target/ and the commit map is True.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp)
+            (dest / ".git" / "filter-repo").mkdir(parents=True)
+            (dest / ".git" / "filter-repo" / "commit-map").write_text(
+                "old new\n"
+            )
+            (dest / "user_service").mkdir()
             self.assertTrue(is_fully_rewritten(dest, "user_service"))
+
+    def test_reuse_requires_the_recorded_source_tip(self) -> None:
+        """same_source_tip is true only for the old hash of HEAD.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp)
+            dest.mkdir(exist_ok=True)
+            _git(dest, "init", "-q")
+            (dest / "f").write_text("a\n")
+            _git(dest, "add", "f")
+            _git(dest, "commit", "-qm", "a")
+            head = _git(dest, "rev-parse", "HEAD")
+            mapped = dest / ".git" / "filter-repo"
+            mapped.mkdir()
+            (mapped / "commit-map").write_text(f"abc123 {head}\n")
+            self.assertTrue(same_source_tip(dest, "abc123"))
+            self.assertFalse(same_source_tip(dest, "other"))
 
     def test_missing_dest_is_not_rewritten(self) -> None:
         """A dest that doesn't exist at all is False, not an error.
@@ -316,6 +367,203 @@ class TestIsFullyRewritten(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             dest = Path(tmp) / "never-created"
             self.assertFalse(is_fully_rewritten(dest, "user_service"))
+
+
+def _git(cwd: Path, *args: str) -> str:
+    """Run git in cwd with a throwaway identity; return stdout.
+
+    Args:
+        cwd: repo directory.
+        args: git arguments.
+    Returns:
+        Stripped stdout.
+    Raises:
+        subprocess.CalledProcessError: git failed.
+    """
+    result = subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.com",
+            "-c",
+            "commit.gpgsign=false",
+            *args,
+        ],
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
+class TestDriftAndInertFiles(unittest.TestCase):
+    """The merge must say what it would change and what GitHub will ignore."""
+
+    def test_drift_counts_commits_past_the_pin(self) -> None:
+        """A tip two commits past the pinned commit reports 2; at the pin, 0.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            _git(repo, "init", "-q", "--template=")
+            (repo / "a").write_text("1")
+            _git(repo, "add", "a")
+            _git(repo, "commit", "-q", "-m", "one")
+            pinned = _git(repo, "rev-parse", "HEAD")
+            self.assertEqual(drift_count(repo, pinned), 0)
+            for n in ("2", "3"):
+                (repo / "a").write_text(n)
+                _git(repo, "commit", "-q", "-am", n)
+            self.assertEqual(drift_count(repo, pinned), 2)
+
+    def test_drift_line_flags_only_real_drift(self) -> None:
+        """Zero drift is ok; any drift is loud and names the escape hatch.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        self.assertTrue(drift_line("infra", 0).startswith("ok"))
+        line = drift_line("infra", 3)
+        self.assertTrue(line.startswith("DRIFT"))
+        self.assertIn("--at-pinned", line)
+
+    def test_gitlink_sha_reads_the_pinned_commit(self) -> None:
+        """A gitlink entry's SHA comes back; a plain directory raises.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        sha = "a" * 40
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            _git(repo, "init", "-q", "--template=")
+            _git(repo, "update-index", "--add", "--cacheinfo", f"160000,{sha},svc")
+            (repo / "plain").mkdir()
+            (repo / "plain" / "f").write_text("x")
+            _git(repo, "add", "plain")
+            _git(repo, "commit", "-q", "-m", "x")
+            self.assertEqual(gitlink_sha(repo, "svc"), sha)
+            with self.assertRaises(ValueError):
+                gitlink_sha(repo, "plain")
+
+    def test_nested_governance_files_are_listed(self) -> None:
+        """Merged-in .github and CODEOWNERS are reported; clean dirs are not.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            (tree / "user_service" / ".github").mkdir(parents=True)
+            (tree / "admin").mkdir()
+            (tree / "admin" / "CODEOWNERS").write_text("* @x")
+            (tree / "infra").mkdir()
+            self.assertEqual(
+                nested_governance_paths(tree, ["user_service", "admin", "infra"]),
+                ["admin/CODEOWNERS", "user_service/.github"],
+            )
+
+    def test_main_reports_drift_before_merging(self) -> None:
+        """merge_repos.main computes the pin and the report before it drops
+        gitlinks (afterwards the pin is gone), and offers --at-pinned.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        source = MERGE_REPOS_PY.read_text()
+        main_body = source.split("def main(", 1)[1]
+        self.assertLess(
+            main_body.index("gitlink_sha("), main_body.index("drop_gitlinks(")
+        )
+        self.assertIn("--at-pinned", source)
+        self.assertIn("nested_governance_paths(", main_body)
+
+
+class TestCutoverChecklist(unittest.TestCase):
+    """The steps no script can do are printed by the script itself, so they
+    cannot be missed — and are not a separate document nobody opens."""
+
+    def test_checklist_covers_each_irreversible_step(self) -> None:
+        """apply-phase0.sh prints the freeze, the state a rewrite loses, the
+        secret scan, repointing consumers and archive-not-delete.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        body = (HERE / "apply-phase0.sh").read_text()
+        for needle in (
+            "Freeze",
+            "open PRs and issues",
+            "tags and GitHub Releases",
+            "Scan the merged history for secrets",
+            "Cloud Build",
+            "Archive the 8 old repos — do not delete",
+            "drift report",
+            "--at-pinned",
+            "CODEOWNERS",
+        ):
+            self.assertIn(needle, body)
+
+    def test_checklist_prints_on_both_paths(self) -> None:
+        """It prints in the dry run and again after a real merge, not only in
+        one of them.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        body = (HERE / "apply-phase0.sh").read_text()
+        self.assertEqual(body.count("cutover_checklist"), 3)
+        dry_run_at = body.index('if [ "$APPLY" -eq 0 ]; then')
+        self.assertLess(dry_run_at, body.index("cutover_checklist\n  echo"))
+
+    def test_apply_script_passes_at_pinned_through(self) -> None:
+        """apply-phase0.sh and lib.sh accept --at-pinned and hand it to
+        merge_repos.py.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        apply = (HERE / "apply-phase0.sh").read_text()
+        lib = (HERE / "lib.sh").read_text()
+        self.assertIn("--at-pinned) AT_PINNED=1", lib)
+        self.assertIn("MERGE_ARGS+=(--at-pinned)", apply)
 
 
 if __name__ == "__main__":

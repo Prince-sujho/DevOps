@@ -102,21 +102,79 @@ def clone_repo(org: str, github_name: str, dest: Path) -> None:
 def is_fully_rewritten(dest: Path, target: str) -> bool:
     """True if dest is a clone that rewrite_to_subdirectory already finished.
 
-    filter-repo either finishes cleanly or leaves the clone in an
-    unrecognizable partial state — there's no safe way to resume a half-done
-    rewrite, only to detect it and start over. A finished rewrite always has
-    its own target/ subdirectory at the clone root; a clone that was only
-    cloned, or crashed mid-rewrite, never does.
+    A target/ directory on its own is not proof: the source repo may already
+    contain that folder, and a half-done rewrite can too. filter-repo writes
+    .git/filter-repo/commit-map only when the rewrite finishes.
 
     Args:
         dest: the clone directory to check.
         target: the subdirectory name rewrite_to_subdirectory moves paths under.
     Returns:
-        True if dest looks like a completed rewrite.
+        True if dest has the rewritten tree and the commit map.
     Raises:
         None.
     """
-    return (dest / ".git").is_dir() and (dest / target).is_dir()
+    commit_map = dest / ".git" / "filter-repo" / "commit-map"
+    return (
+        (dest / ".git").is_dir()
+        and (dest / target).is_dir()
+        and commit_map.is_file()
+    )
+
+
+def same_source_tip(dest: Path, tip: str) -> bool:
+    """True when this rewritten clone was made from tip.
+
+    filter-repo changes every hash. The commit map records the old hash of
+    the rewritten HEAD, which is the source commit this clone was built from.
+
+    Args:
+        dest: a clone is_fully_rewritten already accepted.
+        tip: the source repo's current default-branch SHA.
+    Returns:
+        True when the commit map's old hash for HEAD is tip.
+    Raises:
+        subprocess.CalledProcessError: git rev-parse failed.
+    """
+    head = run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=dest,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    commit_map = dest / ".git" / "filter-repo" / "commit-map"
+    for line in commit_map.read_text().splitlines():
+        if not line.strip():
+            continue
+        old, new = line.split()
+        if new == head:
+            return old == tip
+    return False
+
+
+def source_tip(org: str, github_name: str) -> str:
+    """The source repo's current default-branch commit.
+
+    Args:
+        org: GitHub org the repo belongs to.
+        github_name: the repo name.
+    Returns:
+        The 40-character SHA.
+    Raises:
+        subprocess.CalledProcessError: gh api failed.
+    """
+    result = run(
+        [
+            "gh",
+            "api",
+            f"repos/{org}/{github_name}/commits/HEAD",
+            "--jq",
+            ".sha",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
 
 
 def rewrite_to_subdirectory(repo_dir: Path, target: str) -> None:
@@ -159,6 +217,67 @@ def default_branch(repo_dir: Path) -> str:
         text=True,
     )
     return result.stdout.strip()
+
+
+def gitlink_sha(super_repo_dir: Path, target: str) -> str:
+    """The exact commit super_repo's gitlink for target is pinned to right
+    now — merging each repo's main tip instead would silently jump every
+    service past whatever SHA sujho actually recorded, the same float bug
+    phase0 exists to remove from the deploy YAMLs.
+
+    Args:
+        super_repo_dir: the super-repo's working copy, gitlinks still intact
+            (must be called before drop_gitlinks removes them).
+        target: the gitlink path to read (e.g. "user_service").
+    Returns:
+        The 40-char commit SHA the gitlink is pinned to.
+    Raises:
+        subprocess.CalledProcessError: git ls-tree failed.
+        ValueError: target isn't a gitlink (mode 160000) entry in HEAD.
+    """
+    result = run(
+        ["git", "ls-tree", "HEAD", "--", target],
+        cwd=super_repo_dir,
+        capture_output=True,
+        text=True,
+    )
+    line = result.stdout.strip()
+    if not line.startswith("160000"):
+        raise ValueError(
+            f"{target!r} is not a gitlink in {super_repo_dir}'s HEAD: "
+            f"{line!r}"
+        )
+    # "<mode> <type> <sha>\t<path>"
+    return line.split()[2]
+
+
+def mapped_sha(rewritten_repo_dir: Path, old_sha: str) -> str:
+    """The rewritten repo's new commit SHA for a commit that existed before
+    rewrite_to_subdirectory ran — filter-repo changes every commit's hash
+    (the tree moved under target/), but records the old->new mapping.
+
+    Args:
+        rewritten_repo_dir: repo dir already rewritten by
+            rewrite_to_subdirectory.
+        old_sha: the commit SHA from before the rewrite (e.g. from
+            gitlink_sha).
+    Returns:
+        The corresponding post-rewrite commit SHA.
+    Raises:
+        FileNotFoundError: the rewrite's commit-map is missing (rewrite
+            didn't actually run).
+        ValueError: old_sha has no entry in the commit-map — it may have
+            been pruned as empty, or the sha itself is wrong.
+    """
+    commit_map = rewritten_repo_dir / ".git" / "filter-repo" / "commit-map"
+    for line in commit_map.read_text().splitlines():
+        old, new = line.split()
+        if old == old_sha:
+            return new
+    raise ValueError(
+        f"{old_sha} has no rewritten commit in {commit_map} — pinned "
+        f"gitlink commit may have been pruned by the rewrite"
+    )
 
 
 def _remove_gitmodules_sections(
@@ -226,15 +345,79 @@ def drop_gitlinks(super_repo_dir: Path, targets: list[str]) -> None:
     )
 
 
+def drift_count(rewritten_repo_dir: Path, pinned_new_sha: str) -> int:
+    """How many commits the repo's tip is ahead of the SHA sujho pinned.
+
+    Args:
+        rewritten_repo_dir: repo dir already rewritten by
+            rewrite_to_subdirectory.
+        pinned_new_sha: the pinned commit's post-rewrite SHA (mapped_sha).
+    Returns:
+        Commits reachable from HEAD but not from the pinned commit.
+    Raises:
+        subprocess.CalledProcessError: git rev-list failed.
+    """
+    result = run(
+        ["git", "rev-list", "--count", f"{pinned_new_sha}..HEAD"],
+        cwd=rewritten_repo_dir,
+        capture_output=True,
+        text=True,
+    )
+    return int(result.stdout.strip())
+
+
+def drift_line(target: str, ahead: int) -> str:
+    """One line of the drift report.
+
+    Args:
+        target: the merge target name.
+        ahead: commits the tip is ahead of the pinned commit.
+    Returns:
+        A human-readable line; 0 means the tip is what production pinned.
+    Raises:
+        None.
+    """
+    if ahead == 0:
+        return f"ok    {target}: tip is exactly the commit sujho pinned"
+    return (
+        f"DRIFT {target}: tip is {ahead} commit(s) past the commit sujho "
+        f"pinned; merging the tip ships them unless you use --at-pinned"
+    )
+
+
+def nested_governance_paths(tree: Path, targets: list[str]) -> list[str]:
+    """Merged-in .github dirs and CODEOWNERS files that GitHub will ignore.
+
+    GitHub only reads workflows and CODEOWNERS from the repository root, so
+    each backend repo's own copies go inert the moment it becomes a
+    subdirectory. That silently drops any review rule or CI it relied on.
+
+    Args:
+        tree: the merged working copy.
+        targets: the merged subdirectory names to look inside.
+    Returns:
+        Repo-relative paths found, sorted.
+    Raises:
+        None.
+    """
+    found: list[str] = []
+    for target in targets:
+        base = tree / target
+        for name in (".github", "CODEOWNERS", "docs/CODEOWNERS"):
+            if (base / name).exists():
+                found.append(f"{target}/{name}")
+    return sorted(found)
+
+
 def _merge_fetched(
     super_repo_dir: Path, target: str, branch: str
 ) -> None:
-    """Fetch a temporary remote and merge its branch into the super-repo.
+    """Fetch a temporary remote and merge a ref of it into the super-repo.
 
     Args:
         super_repo_dir: the super-repo's working copy.
         target: temporary remote name.
-        branch: branch on that remote to merge.
+        branch: branch on that remote to merge, or a commit SHA.
     Returns:
         None.
     Raises:
@@ -255,7 +438,10 @@ def _merge_fetched(
 
 
 def merge_one(
-    super_repo_dir: Path, target: str, rewritten_repo_dir: Path
+    super_repo_dir: Path,
+    target: str,
+    rewritten_repo_dir: Path,
+    at_commit: str | None = None,
 ) -> None:
     """Merge one rewritten repo's history into the super-repo working copy.
 
@@ -265,6 +451,8 @@ def merge_one(
             name and in the merge commit message.
         rewritten_repo_dir: the repo's local clone, already rewritten by
             rewrite_to_subdirectory.
+        at_commit: merge this (post-rewrite) commit instead of the branch
+            tip, e.g. the commit sujho had pinned.
     Returns:
         None.
     Raises:
@@ -274,7 +462,7 @@ def merge_one(
             means an assumption was violated and needs investigating, not
             blindly resolving).
     """
-    branch = default_branch(rewritten_repo_dir)
+    branch = at_commit or default_branch(rewritten_repo_dir)
     run(
         ["git", "remote", "add", target, str(rewritten_repo_dir)],
         cwd=super_repo_dir,
@@ -300,6 +488,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--org", default="Sujho", help="GitHub org every repo belongs to"
     )
     parser.add_argument("--repos-json", type=Path, default=DEFAULT_REPOS_JSON)
+    parser.add_argument(
+        "--at-pinned",
+        action="store_true",
+        help="merge each repo at the commit sujho's gitlink pinned, not its "
+        "branch tip (default: tip; the drift report says what differs)",
+    )
     parser.add_argument(
         "--scratch",
         type=Path,
@@ -334,7 +528,11 @@ def _rewritten_clones(
     for entry in merge_repos:
         dest = scratch / entry["github"]
         target = entry["target"]
-        if dest.exists() and not is_fully_rewritten(dest, target):
+        if dest.exists() and is_fully_rewritten(dest, target):
+            if not same_source_tip(dest, source_tip(org, entry["github"])):
+                print(f"{dest}: source tip moved, recloning")
+                shutil.rmtree(dest)
+        elif dest.exists():
             print(f"{dest}: present but not fully rewritten, redoing")
             shutil.rmtree(dest)
         if not dest.exists():
@@ -368,10 +566,32 @@ def main(argv: list[str] | None = None) -> int:
     rewritten = _rewritten_clones(
         args.org, args.scratch, data["merge_repos"]
     )
+    pinned = {
+        target: mapped_sha(repo_dir, gitlink_sha(args.output, target))
+        for target, repo_dir in rewritten.items()
+    }
+    report = [
+        drift_line(target, drift_count(rewritten[target], pinned[target]))
+        for target in rewritten
+    ]
     drop_gitlinks(args.output, list(rewritten))
     for target, repo_dir in rewritten.items():
         print(f"=== merging {target} ===")
-        merge_one(args.output, target, repo_dir)
+        merge_one(
+            args.output,
+            target,
+            repo_dir,
+            at_commit=pinned[target] if args.at_pinned else None,
+        )
+
+    print("--- drift: merged tip vs the commit sujho pinned ---")
+    print("\n".join(report))
+    (args.scratch / "drift-report.txt").write_text("\n".join(report) + "\n")
+    inert = nested_governance_paths(args.output, list(rewritten))
+    if inert:
+        print("--- WARNING: GitHub ignores these now (not at the repo root) ---")
+        print("\n".join(f"  {path}" for path in inert))
+        print("  Move anything they enforced to the root .github/ or CODEOWNERS.")
 
     print(f"done: merged tree at {args.output}")
     return 0

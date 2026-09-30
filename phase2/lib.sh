@@ -38,7 +38,6 @@ ${BASH_SOURCE%/*}/workflows/cloud-run-prod-rollback.yaml"
 ${BASH_SOURCE%/*}/jobs/workflows/cloud-run-preprod-job.yaml"
   ".github/workflows/cloud-run-prod-job.yaml:\
 ${BASH_SOURCE%/*}/jobs/workflows/cloud-run-prod-job.yaml"
-  "IAM-table.md:${BASH_SOURCE%/*}/IAM-table.md"
   ".github/PULL_REQUEST_TEMPLATE.md:${BASH_SOURCE%/*}/../.github/PULL_REQUEST_TEMPLATE.md"
   ".github/dependabot.yml:${BASH_SOURCE%/*}/../.github/dependabot.yml"
 )

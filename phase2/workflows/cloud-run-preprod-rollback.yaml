@@ -1,7 +1,9 @@
 name: Rollback Cloud Run service (Pre-Prod)
 
-# Manual only. Shifts traffic to a previous revision — no rebuild, no relabelling.
-# Empty revision = newest served=true one older than what's currently serving.
+# Manual only. Shifts traffic to a previous revision — no rebuild. Afterwards
+# the `lkg` tag moves onto the revision rolled to and `prev` is dropped.
+# Empty revision = whatever the service's own `prev` tag records as the last
+# known good revision before the current deploy.
 
 on:
   workflow_dispatch:
@@ -38,12 +40,14 @@ jobs:
     steps:
       - name: Refuse unless this run is on main
         run: |
-          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
-            echo "Refuse: dispatch from main, not ${{ github.ref }}"
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "Refuse: dispatch from main, not $GITHUB_REF"
             exit 1
           fi
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
         with:

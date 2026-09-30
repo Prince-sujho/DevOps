@@ -1,8 +1,19 @@
 name: Deploy Cloud Run service (Prod)
 
-# Manual only. Deploys the exact image already tested on Pre-Prod, never rebuilds.
-# The deploy job's `environment: production` pauses for a Lead's approval —
-# set that Environment's "Prevent self-review" so the starter can't approve their own run.
+# Manual only. Deploys the exact image already verified on Pre-Prod, never
+# rebuilds. The deploy job's `environment: production` pauses for a Lead's
+# approval — set that Environment's "Prevent self-review" so the starter
+# can't approve their own run (phase2/verify-phase2.sh --remote checks it).
+#
+# GCP trusts only this job's OIDC subject,
+# repo:Sujho/sujho:environment:production (see
+# phase2/scripts/provision-wif.sh). That subject exists only after the
+# Environment's approval, so a workflow on some other branch cannot
+# impersonate the prod deploy account and skip the approval.
+#
+# Nothing here authenticates to GCP before approval: the "tested image
+# exists" check happens inside Cloud Build (deploy-only.yaml's
+# resolve-digest), which only finds images Pre-Prod published after verify.
 
 on:
   workflow_dispatch:
@@ -20,7 +31,9 @@ on:
           - document-worker
           - admin
       commit:
-        description: Git commit to deploy — the one tested on Pre-Prod. Typed once.
+        description: >-
+          Full 40-character git commit to deploy — the one verified on
+          Pre-Prod. Typed once.
         required: true
         type: string
 
@@ -38,44 +51,28 @@ jobs:
     steps:
       - name: Refuse unless this run is on main
         run: |
-          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
-            echo "Refuse: dispatch from main, not ${{ github.ref }}"
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "Refuse: dispatch from main, not $GITHUB_REF"
             exit 1
           fi
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Refuse unless the typed commit is an ancestor of main
+      - name: Refuse unless the typed commit is a full SHA and an ancestor of main
+        env:
+          COMMIT: ${{ inputs.commit }}
         run: |
           set -euo pipefail
-          git fetch origin main
-          if ! git merge-base --is-ancestor "${{ inputs.commit }}" origin/main; then
-            echo "Refuse: ${{ inputs.commit }} is not on main."
+          if ! printf '%s' "$COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "Refuse: commit must be the full 40-character lowercase SHA."
             exit 1
           fi
-
-      - uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
-        with:
-          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
-          service_account: ${{ vars.GCP_WIF_SERVICE_ACCOUNT_PROD }}
-
-      - uses: google-github-actions/setup-gcloud@6a7c903a70c8625ed6700fa299f5ddb4ca6022e9 # v2.1.5
-
-      - name: Refuse unless the tested image actually exists
-        env:
-          SERVICE: ${{ inputs.service }}
-          SHA: ${{ inputs.commit }}
-        run: |
-          set -euo pipefail
-          SHORT="$(printf '%s' "$SHA" | cut -c1-7)"
-          REGISTRY="asia-south1-docker.pkg.dev/sujho-preprod/services"
-          DIGEST="$(gcloud artifacts docker images describe \
-            "$REGISTRY/$SERVICE:sha-$SHORT" --format='value(image_summary.digest)' || true)"
-          if [ -z "$DIGEST" ]; then
-            echo "Refuse: $REGISTRY/$SERVICE:sha-$SHORT" \
-              "does not exist. Nothing was tested to promote."
+          git cat-file -e "${COMMIT}^{commit}"
+          if ! git merge-base --is-ancestor "$COMMIT" origin/main; then
+            echo "Refuse: $COMMIT is not on main."
             exit 1
           fi
 
@@ -88,6 +85,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.commit }}
+          persist-credentials: false
 
       - uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
         with:
@@ -102,9 +100,38 @@ jobs:
           SHA: ${{ inputs.commit }}
         run: |
           set -euo pipefail
-          SHORT="$(printf '%s' "$SHA" | cut -c1-7)"
-          CFG="$(jq -r --arg s "$SERVICE" '.[$s]' ci/services.json)"
-          RUN_ARGS="$(echo "$CFG" | jq -r '.run_args | join(" ")')"
+          SHORT="$(printf '%s' "$SHA" | cut -c1-12)"
+          # Per-environment config: the base entry merged with its
+          # overrides.prod block, so Pre-Prod and Prod can differ (instance
+          # counts, VPC egress) without a second copy of the file.
+          CFG="$(jq -c --arg s "$SERVICE" --arg env prod '
+            if has($s)
+            then (.[$s] | del(.overrides)) * (.[$s].overrides[$env] // {})
+            else null end' ci/services.json)"
+          if [ "$CFG" = "null" ]; then
+            echo "Refuse: $SERVICE is not in ci/services.json"
+            exit 1
+          fi
+          RUN_ARGS="$(echo "$CFG" | jq -r '.run_args // [] | join(" ")')"
+          RUNTIME_SA="$(echo "$CFG" | jq -r '.runtime_sa // ""')"
+          # ';' not ',': --substitutions is a comma-separated list, so a comma
+          # inside any value below would silently become a new substitution.
+          SECRETS="$(echo "$CFG" | jq -r '.secrets // [] | join(";")')"
+          ENV_VARS="$(echo "$CFG" | jq -r '.env // [] | join(";")')"
+          if [ -z "$RUNTIME_SA" ]; then
+            echo "Refuse: $SERVICE has no runtime_sa in ci/services.json."
+            echo "Deploying without one runs the container as the project's"
+            echo "default compute account."
+            exit 1
+          fi
+          case "$RUN_ARGS$SECRETS$ENV_VARS" in
+            *,*)
+              echo "Refuse: $SERVICE config contains a comma, which would"
+              echo "split the substitutions string. Use ';' between secrets"
+              echo "and env entries; run_args cannot contain one at all."
+              exit 1
+              ;;
+          esac
 
           # one quoted string: values with spaces (_RUN_ARGS) stay one substitution
           SUBS="_SERVICE_NAME=$SERVICE"
@@ -115,10 +142,21 @@ jobs:
           SUBS+=",_MAX_INSTANCES=$(echo "$CFG" | jq -r '.max_instances // "10"')"
           SUBS+=",_VERIFY_METHOD=$(echo "$CFG" | jq -r '.verify // "health"')"
           SUBS+=",_RUN_ARGS=$RUN_ARGS"
+          SUBS+=",_RUNTIME_SA=$RUNTIME_SA"
+          SUBS+=",_SECRETS=$SECRETS"
+          SUBS+=",_ENV_VARS=$ENV_VARS"
           SUBS+=",_COMMIT_SHA=$SHA"
           SUBS+=",_SHORT_SHA=$SHORT"
 
-          gcloud builds submit --no-source \
+          # sujho-478914 has no Developer Connect link (it never fetches from
+          # GitHub), so the checkout above is uploaded as real source. Only
+          # verify_revision.py is read from it. No .git, no credentials file.
+          IGNORE="$RUNNER_TEMP/deploy.gcloudignore"
+          printf '%s\n' '.git' 'gha-creds-*.json' > "$IGNORE"
+
+          gcloud builds submit . \
+            --ignore-file="$IGNORE" \
+            --gcs-source-staging-dir=gs://sujho-478914-build-source/source \
             --project=sujho-478914 \
             --region=asia-south1 \
             --config=ci/deploy-only.yaml \

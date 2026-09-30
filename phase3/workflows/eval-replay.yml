@@ -2,8 +2,10 @@ name: Weekly eval replay
 
 # Drift detection against Eval-Suite (RespondService, fake users, real
 # OpenAI/Gemini/Neo4j), once a week on Sujho/sujho. Not a merge gate.
-# Missing keys skip — the schedule must not go red. Real spend limits are
-# at the provider, not here. Cases live in Eval-Suite/eval_suite/cases/.
+# Not configured (GCP_WIF_PROVIDER unset) skips cleanly — the schedule must not
+# go red on a repo that never set this up. Once it IS configured, a broken
+# login, secret fetch or install fails the run: a drift detector that quietly
+# does nothing is worse than none. Real spend limits are at the provider. Cases live in Eval-Suite/eval_suite/cases/.
 #
 # This job reports only — it never gates a deploy.
 
@@ -28,9 +30,11 @@ jobs:
       actions: read
       id-token: write
     steps:
+      # Post-phase0: sujho has no submodules to recurse into (the 8 backend
+      # repos are plain subdirectories now, not gitlinks).
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          submodules: recursive
+          persist-credentials: false
 
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
@@ -53,24 +57,31 @@ jobs:
 
       - uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
         id: auth
-        continue-on-error: true
+        if: vars.GCP_WIF_PROVIDER != ''
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_WIF_SERVICE_ACCOUNT_EVAL }}
 
       - uses: google-github-actions/setup-gcloud@6a7c903a70c8625ed6700fa299f5ddb4ca6022e9 # v2.1.5
-        if: steps.auth.outcome == 'success'
-        continue-on-error: true
+        if: vars.GCP_WIF_PROVIDER != ''
+
+      # Before the secrets step on purpose: pip runs setup code from every
+      # package it installs, and there is no reason for that code to run in
+      # an environment holding live API keys.
+      - name: Install product + test requirements
+        run: python tests/ci/pipeline.py install
 
       - name: Fetch Eval-Suite secrets from Secret Manager
-        if: steps.auth.outcome == 'success'
-        continue-on-error: true
+        if: vars.GCP_WIF_PROVIDER != ''
+        env:
+          SECRETS_PROJECT: sujho-preprod
         run: |
           set -euo pipefail
           mask_set() {
             local name="$1" secret="$2"
             local value
-            value="$(gcloud secrets versions access latest --secret="$secret")"
+            value="$(gcloud secrets versions access latest \
+              --secret="$secret" --project="$SECRETS_PROJECT")"
             echo "::add-mask::${value}"
             echo "${name}=${value}" >> "$GITHUB_ENV"
           }
@@ -79,10 +90,6 @@ jobs:
           mask_set NEO4J_URI eval-neo4j-uri
           mask_set NEO4J_USER eval-neo4j-user
           mask_set NEO4J_PASSWORD eval-neo4j-password
-
-      - name: Install product + test requirements
-        continue-on-error: true
-        run: python tests/ci/pipeline.py install
 
       - name: Replay
         run: python3 scripts/eval_replay.py

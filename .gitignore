@@ -18,12 +18,19 @@ Eval-Suite/reports/
 # Local scratch (never commit real IDs/keys used for manual testing)
 *.local
 
-# Doc files kept on disk for reference only — not tracked, not pushed.
-# Exceptions: README.md, and the PR template (GitHub has to actually
-# serve it on every PR, so it must stay tracked).
-Eval-Suite/EVAL_PLAN.md
+# Notes kept on disk for reference only — not tracked, not pushed. Nothing
+# tracked is allowed to depend on one of these: a reader who clones this repo
+# will not have them, so anything they say that matters belongs in the file
+# that needs it (phase2/validate.py enforces this for IAM-table.md).
+# Listing a file that is already tracked does nothing — git only ignores what
+# it is not already following — so every name below is untracked, and adding
+# one here is not a way to un-push something.
+# Tracked on purpose: README.md, .github/PULL_REQUEST_TEMPLATE.md (GitHub has
+# to serve it on every PR), .github/dependabot.yml, Eval-Suite/EVAL_PLAN.md
+# (tracked since before this list existed), and phase2/IAM-table.md — the
+# Lead's runbook, which phase2 no longer pushes anywhere (see phase2/lib.sh's
+# PHASE2_FILE_MAP).
 docs/
-phase2/IAM-table.md
 phase2/jobs/EXAMPLE-knowledge-store-sessions.md
 phase2/jobs/README.md
 tests/README.md

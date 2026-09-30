@@ -5,6 +5,7 @@ generators."""
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import unittest
@@ -297,8 +298,10 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("ci/job-deploy-only.yaml", PROD)
         self.assertNotIn("ci/job-build-deploy.yaml", PROD)
 
-    def test_prod_refuses_unless_image_exists(self) -> None:
-        """Prod refuses to deploy an image that was never built.
+    def test_prod_refuses_unless_image_was_verified(self) -> None:
+        """Prod refuses an image Pre-Prod never published: the check lives in
+        Cloud Build's resolve-digest, and the workflow itself holds no GCP
+        credential before a Lead approves.
 
         Args:
             None.
@@ -307,8 +310,11 @@ class WorkflowTests(unittest.TestCase):
         Raises:
             None.
         """
-        self.assertIn("Refuse:", PROD)
-        self.assertIn("does not exist", PROD)
+        self.assertIn("Refuse:", DEPLOY_ONLY)
+        self.assertIn("does not exist", DEPLOY_ONLY)
+        self.assertIn("id: resolve-digest", DEPLOY_ONLY)
+        validate_job = PROD.split("  deploy:\n")[0]
+        self.assertNotIn("google-github-actions/auth", validate_job)
 
     def test_concurrency_does_not_cancel_in_progress(self) -> None:
         """Both workflows serialize runs per job without cancelling one in
@@ -338,6 +344,43 @@ class WorkflowTests(unittest.TestCase):
         for text in (PREPROD, PROD):
             self.assertIn("NEEDS_ENTRY_ID", text)
             self.assertIn("needs entry_id to execute", text)
+
+
+    def test_entry_id_is_checked_before_it_reaches_gcloud(self) -> None:
+        # --args is comma-separated: an entry_id containing a comma would add
+        # arguments to the job's command line.
+        """Both workflows screen entry_id, and the pattern they ship rejects a
+        value that would inject an extra argument.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        for text in (PREPROD, PROD):
+            guard = text.index('ENTRY_ID" | grep -Eq')
+            self.assertLess(guard, text.index("--args="))
+            pattern = re.search(
+                r"grep -Eq '(\^\[A-Za-z0-9[^']+)'", text[guard:]
+            )
+            assert pattern is not None
+            allowed = re.compile(pattern.group(1))
+            for good in ("entry-42", "urn:doc:7", "a_b.c", "x" * 128):
+                self.assertTrue(allowed.fullmatch(good), good)
+            bad = (
+                "a,--args=x",
+                "a b",
+                "a;rm -rf /",
+                "$(id)",
+                "`id`",
+                "a/b",
+                "x" * 129,
+                "",
+            )
+            for value in bad:
+                self.assertIsNone(allowed.fullmatch(value), value)
 
 
 class CloudBuildRecipeTests(unittest.TestCase):
@@ -396,10 +439,13 @@ class CloudBuildRecipeTests(unittest.TestCase):
         build_idx = BUILD.index("build-image")
         self.assertLess(check_idx, build_idx)
 
-    def test_fetches_sujho_before_anything_else(self) -> None:
-        # --no-source means an empty workspace; fetch-sujho has to be first
-        # and inline, since it can't call a script from the unfetched repo
-        """fetch-sujho is the first step, inline, before any script call.
+    def test_build_recipe_fetches_nothing_and_starts_with_its_checks(
+        self,
+    ) -> None:
+        # the workflow uploads the exact checkout as real source; the recipe
+        # never fetches from GitHub, so it holds no GitHub credential
+        """No fetch step: the first steps are the entry-file check and the
+        baseline resolve, both running on the uploaded checkout.
 
         Args:
             None.
@@ -408,15 +454,15 @@ class CloudBuildRecipeTests(unittest.TestCase):
         Raises:
             None.
         """
-        self.assertIn("id: fetch-sujho", BUILD)
-        fetch_idx = BUILD.index("id: fetch-sujho")
-        next_idx = BUILD.index("id: check-entry-file-exists")
-        self.assertLess(fetch_idx, next_idx)
-        step = BUILD.split("id: fetch-sujho")[1].split(
-            "id: check-entry-file-exists"
-        )[0]
-        self.assertNotIn("python3 ci/", step)
-        self.assertIn("git init", step)
+        for needle in ("fetch-sujho", "git fetch", "git remote add", "git init"):
+            self.assertNotIn(needle, BUILD)
+        self.assertLess(
+            BUILD.index("id: check-entry-file-exists"),
+            BUILD.index("id: resolve-baseline"),
+        )
+        self.assertLess(
+            BUILD.index("id: resolve-baseline"), BUILD.index("id: gate-1-static")
+        )
 
     def test_gate_1_installs_git_for_the_secrets_hook_file_list(self) -> None:
         """Gate 1 installs git so the secrets hook can list changed files.
@@ -472,6 +518,27 @@ class CloudBuildRecipeTests(unittest.TestCase):
             deploy_idx = body.index("deploy-job")
             sync_idx = body.index("sync-schedule")
             self.assertLess(deploy_idx, sync_idx)
+
+    def test_preprod_runs_the_job_before_publishing_the_tag(self) -> None:
+        """The Pre-Prod recipe executes the job once before the sha- tag,
+        except a job that needs an entry id this build does not have.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        prove = BUILD.index("id: prove-run")
+        publish = BUILD.index("id: publish-verified-tag")
+        self.assertLess(BUILD.index("id: deploy-job"), prove)
+        self.assertLess(prove, BUILD.index("id: sync-schedule"))
+        self.assertLess(prove, publish)
+        self.assertIn('gcloud run jobs execute "${_JOB_ID}"', BUILD)
+        self.assertIn("--wait", BUILD[prove:publish])
+        self.assertIn('_NEEDS_ENTRY_ID}" = "1"', BUILD[prove:publish])
+        self.assertNotIn("jobs execute", DEPLOY_ONLY)
 
     def test_kaniko_step_has_no_bash_entrypoint_override(self) -> None:
         # kaniko's image has no shell — never entrypoint: bash on it

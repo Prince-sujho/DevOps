@@ -132,8 +132,10 @@ class MutationWorkflowTests(unittest.TestCase):
         self.assertIn("issues: write", MUT_WF)
         self.assertIn("MUTATION_TRACKING_ISSUE", MUT_WF)
 
-    def test_checks_out_submodules(self) -> None:
-        """Mutation checks out submodules recursively.
+    def test_does_not_check_out_submodules(self) -> None:
+        # Post-phase0, sujho has no submodules — the 8 backend repos are
+        # plain subdirectories now, not gitlinks.
+        """Mutation does not ask for submodules that no longer exist.
 
         Args:
             None.
@@ -142,7 +144,7 @@ class MutationWorkflowTests(unittest.TestCase):
         Raises:
             None.
         """
-        self.assertIn("submodules: recursive", MUT_WF)
+        self.assertNotIn("submodules: recursive", MUT_WF)
 
 
 class EvalWorkflowTests(unittest.TestCase):
@@ -245,7 +247,8 @@ class EvalWorkflowTests(unittest.TestCase):
         self.assertIn("Eval-Suite/run.py", EVAL_WF + script)
         self.assertIn("eval-openai-key", EVAL_WF)
         self.assertNotIn("ANTHROPIC_API_KEY", EVAL_WF)
-        self.assertIn("submodules: recursive", EVAL_WF)
+        # Post-phase0, sujho has no submodules to recurse into.
+        self.assertNotIn("submodules: recursive", EVAL_WF)
 
     def test_fail_open_auth(self) -> None:
         """Eval's auth step continues on error rather than failing the job.
@@ -258,6 +261,120 @@ class EvalWorkflowTests(unittest.TestCase):
             None.
         """
         self.assertIn("continue-on-error: true", EVAL_WF)
+
+
+def _step_block(text: str, name: str) -> str:
+    """The text of one workflow step, from its `- name:` line to the next step.
+
+    Args:
+        text: the workflow file's text.
+        name: the step's name, after `- name: `.
+    Returns:
+        The step's text.
+    Raises:
+        AssertionError: if no such step exists.
+    """
+    marker = f"- name: {name}"
+    assert marker in text, name
+    return text.split(marker, 1)[1].split("\n      - ", 1)[0]
+
+
+class LoudFailureTests(unittest.TestCase):
+    def test_configured_eval_setup_fails_loudly(self) -> None:
+        # Unconfigured (no WIF variable) is a clean skip. Configured but
+        # broken must not look like "nothing to do".
+        """Auth, gcloud setup, secret fetch and install have no
+        continue-on-error, and the cloud steps run only when configured.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        auth = EVAL_WF.split("google-github-actions/auth@", 1)[1].split(
+            "\n      - ", 1
+        )[0]
+        setup = EVAL_WF.split("google-github-actions/setup-gcloud@", 1)[1].split(
+            "\n      - ", 1
+        )[0]
+        fetch = _step_block(EVAL_WF, "Fetch Eval-Suite secrets from Secret Manager")
+        install = _step_block(EVAL_WF, "Install product + test requirements")
+        for label, block in (
+            ("auth", auth),
+            ("setup-gcloud", setup),
+            ("fetch", fetch),
+            ("install", install),
+        ):
+            self.assertNotIn("continue-on-error", block, label)
+        for label, block in (("auth", auth), ("setup", setup), ("fetch", fetch)):
+            self.assertIn("vars.GCP_WIF_PROVIDER != ''", block, label)
+
+    def test_only_best_effort_steps_may_continue_on_error(self) -> None:
+        """Only the history restore and the tracking-issue post are
+        best-effort in the eval workflow.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        steps = EVAL_WF.split("\n      - ")
+        soft = [
+            step.splitlines()[0]
+            for step in steps
+            if "continue-on-error: true" in step
+        ]
+        self.assertEqual(len(soft), 2, soft)
+        self.assertTrue(any("Restore eval-history" in line for line in soft))
+        self.assertTrue(any("Post on the tracking issue" in line for line in soft))
+
+    def test_secret_fetch_names_its_project(self) -> None:
+        """gcloud is told which project holds the secrets instead of
+        relying on whatever default the runner has.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        fetch = _step_block(EVAL_WF, "Fetch Eval-Suite secrets from Secret Manager")
+        self.assertIn('--project="$SECRETS_PROJECT"', fetch)
+        self.assertIn("SECRETS_PROJECT: sujho-preprod", fetch)
+
+    def test_no_workflow_keeps_a_github_token_in_git(self) -> None:
+        """Both scheduled workflows check out with persist-credentials off.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        for text in (EVAL_WF, MUT_WF):
+            head = text.split("actions/checkout@", 1)[1].split("\n      - ", 1)[0]
+            self.assertIn("persist-credentials: false", head)
+
+    def test_a_crashed_mutmut_run_is_annotated(self) -> None:
+        """A failed mutmut run still lets the job finish but leaves a
+        visible warning annotation.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        step = _step_block(MUT_WF, "Say so if mutmut itself failed")
+        self.assertIn("steps.mutmut.outcome == 'failure'", step)
+        self.assertIn("::warning", step)
 
 
 class MutationScriptTests(unittest.TestCase):

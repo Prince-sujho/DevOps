@@ -2,6 +2,11 @@ name: Deploy Cloud Run job (Pre-Prod)
 
 # Manual only. Merge to main does not run this.
 # Runs entirely inside sujho-preprod. sujho-dev is never touched by this file.
+#
+# Same shape as cloud-run-preprod-service.yaml: the exact commit is checked out
+# here (full history, no stored GitHub token) and uploaded to Cloud Build as
+# real source. GCP trusts this job by its OIDC subject,
+# repo:Sujho/sujho:ref:refs/heads/main.
 
 on:
   workflow_dispatch:
@@ -19,6 +24,14 @@ on:
           - knowledge-store-import-educart
       commit:
         description: Git commit to deploy (empty = tip of main)
+        required: false
+        type: string
+        default: ""
+      baseline:
+        description: >-
+          Only for a job's first deploy, or to re-baseline on purpose — the
+          full 40-character commit the semgrep/mypy gates compare against.
+          Empty = whatever is deployed now.
         required: false
         type: string
         default: ""
@@ -45,40 +58,68 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.resolve.outputs.sha }}
+      baseline: ${{ steps.resolve.outputs.baseline }}
     steps:
       - name: Refuse unless this run is on main
         run: |
-          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
-            echo "Refuse: dispatch from main, not ${{ github.ref }}"
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "Refuse: dispatch from main, not $GITHUB_REF"
             exit 1
           fi
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Resolve commit and refuse unless it's an ancestor of main
         id: resolve
+        env:
+          COMMIT_INPUT: ${{ inputs.commit }}
+          BASELINE_INPUT: ${{ inputs.baseline }}
         run: |
           set -euo pipefail
-          SHA="${{ inputs.commit }}"
-          if [ -z "$SHA" ]; then
-            SHA="$(git rev-parse origin/main)"
+          # fetch-depth: 0 already brought every branch, so origin/main is here
+          if [ -z "$COMMIT_INPUT" ]; then
+            SHA="$(git rev-parse --verify origin/main)"
+          else
+            if ! printf '%s' "$COMMIT_INPUT" | grep -Eq '^[0-9a-f]{7,40}$'; then
+              echo "Refuse: commit must be 7-40 lowercase hex characters."
+              exit 1
+            fi
+            SHA="$(git rev-parse --verify "${COMMIT_INPUT}^{commit}")"
           fi
-          git fetch origin main
           if ! git merge-base --is-ancestor "$SHA" origin/main; then
-            echo "Refuse: $SHA is not on main."
+            echo "Refuse: $SHA is not on main. Nothing unreviewed deploys from here."
             exit 1
           fi
+          BASELINE=""
+          if [ -n "$BASELINE_INPUT" ]; then
+            if ! printf '%s' "$BASELINE_INPUT" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "Refuse: baseline must be a full 40-character commit SHA."
+              exit 1
+            fi
+            git cat-file -e "${BASELINE_INPUT}^{commit}"
+            if ! git merge-base --is-ancestor "$BASELINE_INPUT" "$SHA"; then
+              echo "Refuse: baseline $BASELINE_INPUT is not an ancestor of $SHA."
+              exit 1
+            fi
+            BASELINE="$BASELINE_INPUT"
+          fi
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "baseline=$BASELINE" >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: validate
     runs-on: ubuntu-latest
     steps:
+      # full history: the baseline gates diff against the deployed commit.
+      # No stored token: the uploaded .git must not carry one.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ needs.validate.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
 
       - uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
         with:
@@ -91,9 +132,10 @@ jobs:
         env:
           JOB_ID: ${{ inputs.job }}
           SHA: ${{ needs.validate.outputs.sha }}
+          BASELINE: ${{ needs.validate.outputs.baseline }}
         run: |
           set -euo pipefail
-          SHORT="$(printf '%s' "$SHA" | cut -c1-7)"
+          SHORT="$(printf '%s' "$SHA" | cut -c1-12)"
           eval "$(python3 jobs/scripts/lookup_job.py --id "$JOB_ID")"
 
           # one quoted string: values with spaces stay one substitution
@@ -111,10 +153,19 @@ jobs:
           SUBS+=",_ENTRY_FILE=$ENTRY_FILE"
           SUBS+=",_ENTRY_MODULE=$ENTRY_MODULE"
           SUBS+=",_SCHEDULE=$SCHEDULE"
+          SUBS+=",_NEEDS_ENTRY_ID=$NEEDS_ENTRY_ID"
           SUBS+=",_COMMIT_SHA=$SHA"
           SUBS+=",_SHORT_SHA=$SHORT"
+          SUBS+=",_BASELINE_SHA=$BASELINE"
 
-          gcloud builds submit --no-source \
+          # Upload everything tracked, .git included (the baseline gates need
+          # history) — but never the credentials file the auth step wrote.
+          IGNORE="$RUNNER_TEMP/build.gcloudignore"
+          printf '%s\n' '# upload the checkout as-is, .git included' 'gha-creds-*.json' > "$IGNORE"
+
+          gcloud builds submit . \
+            --ignore-file="$IGNORE" \
+            --gcs-source-staging-dir=gs://sujho-preprod-build-source/source \
             --project=sujho-preprod \
             --region=asia-south1 \
             --config=ci/job-build-deploy.yaml \
@@ -132,6 +183,14 @@ jobs:
           if [ "$NEEDS_ENTRY_ID" = "1" ]; then
             if [ -z "$ENTRY_ID" ]; then
               echo "this job needs entry_id to execute"
+              exit 1
+            fi
+            # --args is comma-separated, so a comma in entry_id would append
+            # extra arguments to the job's command line. Allow only the shape
+            # a real entry id has.
+            if ! printf '%s' "$ENTRY_ID" | grep -Eq '^[A-Za-z0-9_.:-]{1,128}$'; then
+              echo "Refuse: entry_id must be 1-128 characters of"
+              echo "[A-Za-z0-9_.:-] — no commas, spaces or shell characters."
               exit 1
             fi
             gcloud run jobs execute "$JOB_ID" \

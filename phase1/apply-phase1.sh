@@ -36,7 +36,7 @@ Per full-treatment repo, in order, stopping that repo if a step is not ready:
      If the owner-only org ruleset 403s, open ${CODEOWNERS_BRANCH} + PR and STOP.
      Do not install rulesets until a Lead merges that PR.
   2. If this actor is admin on that repo, upsert:
-       main.json           Code Owners ON, merge-only, org-admin PR bypass (hotfix only)
+       main.json           Code Owners ON, merge-only, NO bypass actor at all
        branch-naming.json  new branches must be fb-<person>-<work>-<dd-mm-yy>
                            (main, dependabot/**, chore/phase*, prove/phase1-* exempt)
      No GitHub dev or pre-prod ruleset.

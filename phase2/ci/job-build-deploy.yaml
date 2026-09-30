@@ -1,6 +1,9 @@
 # Shared Pre-Prod recipe for every job. Values come from lookup_job.py,
 # resolved by the calling workflow, same as services.json for the service recipe.
-# Submitted with --no-source, so the workspace starts empty — fetch-sujho fills it.
+# Submitted as real source (`gcloud builds submit .`) by the calling workflow:
+# the exact commit is already checked out with full history, .git included.
+# Nothing is fetched from GitHub inside Cloud Build, so no GitHub credential
+# ever lives here.
 
 substitutions:
   _JOB_ID: ""
@@ -19,36 +22,22 @@ substitutions:
   _SCHEDULE: ""
   _COMMIT_SHA: ""
   _SHORT_SHA: ""
+  # 1 for ingest/remove: those runs need an entry id this build does not have
+  _NEEDS_ENTRY_ID: "0"
   _TARGET_PROJECT: "sujho-preprod"
   _REGISTRY: "asia-south1-docker.pkg.dev/sujho-preprod/services"
   _REGION: "asia-south1"
-  _DC_CONNECTION: "sujho-github-dc-org"
+  # only for a first deploy, or to re-baseline on purpose; empty = read it off
+  # the deployed job (resolve_baseline.py)
+  _BASELINE_SHA: ""
 
 options:
   logging: CLOUD_LOGGING_ONLY
 
 steps:
-  # inline, self-contained: nothing from this repo exists in the workspace
-  # yet, so this can't call a script that lives inside it (circular)
-  - id: fetch-sujho
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
-    entrypoint: bash
-    args:
-      - -c
-      - |
-        set -euo pipefail
-        URI="$(gcloud developer-connect git-repository-links describe sujho-sujho \
-          --location="${_REGION}" --connection="${_DC_CONNECTION}" --project="${_TARGET_PROJECT}" \
-          --format='value(cloneUri)')"
-        [ -n "$URI" ] || { echo "refuse: sujho-sujho Developer Connect link not found"; exit 1; }
-        git init .
-        git remote add origin "$URI"
-        git fetch --depth=1 origin "${_COMMIT_SHA}"
-        git checkout --force "${_COMMIT_SHA}"
-
   # renamed/missing entry file fails here, not at run time with "module not found"
   - id: check-entry-file-exists
-    name: python:3.12-slim
+    name: python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
     entrypoint: bash
     args:
       - -c
@@ -59,10 +48,10 @@ steps:
           exit 1
         fi
         echo "ok: ${_ENTRY_FILE} exists, runs as python -m ${_ENTRY_MODULE}"
-    waitFor: ["fetch-sujho"]
 
   # same baselining rule as the service recipe — against what's currently
-  # deployed, not a PR merge-base
+  # deployed (or an explicit _BASELINE_SHA), not a PR merge-base; none at all
+  # means first deploy and the gates run in absolute mode
   - id: resolve-baseline
     name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
     entrypoint: bash
@@ -70,48 +59,52 @@ steps:
       - -c
       - |
         set -euo pipefail
-        BASE_SHA="$(python3 ci/gates/resolve_baseline.py --kind=jobs \
-          --name="${_JOB_ID}" --project="${_TARGET_PROJECT}" --region="${_REGION}")"
-        if [ -z "$BASE_SHA" ]; then
-          echo "no prior deploy for ${_JOB_ID}, first deploy"
-          BASE_SHA="${_COMMIT_SHA}"
+        BASE_SHA="${_BASELINE_SHA}"
+        if [ -z "$$BASE_SHA" ]; then
+          BASE_SHA="$(python3 ci/gates/resolve_baseline.py --kind=jobs \
+            --name="${_JOB_ID}" --project="${_TARGET_PROJECT}" --region="${_REGION}")"
         fi
-        # Decision 14: semgrep and mypy compare against the deployed commit.
-        # fetch-sujho fetched only the deploy SHA at depth 1; semgrep's baseline
-        # runs `git diff --merge-base`, which needs the history joining the two.
-        # Full history of this small repo, fetched here where the Developer
-        # Connect credentials are. If the baseline isn't there, fail the build.
-        if [ "$BASE_SHA" != "${_COMMIT_SHA}" ]; then
-          git fetch --unshallow origin
+        if [ -z "$$BASE_SHA" ]; then
+          echo "WARNING: no prior deploy for ${_JOB_ID}: first deploy, gates run in absolute mode"
+          : > /workspace/.baseline_sha
+          exit 0
         fi
-        git cat-file -e "$BASE_SHA^{commit}"
-        echo "$BASE_SHA" > /workspace/.baseline_sha
-        echo "baseline commit: $BASE_SHA"
+        # semgrep's baseline runs `git diff --merge-base`, which needs the
+        # history joining the two commits; the uploaded .git is full history.
+        # If the baseline isn't in it, fail the build.
+        git cat-file -e "$$BASE_SHA^{commit}"
+        echo "$$BASE_SHA" > /workspace/.baseline_sha
+        echo "baseline commit: $$BASE_SHA"
         # The mypy ratchet must count the same tree on both sides: the baseline
         # commit's own worktree, just as HEAD has it. Built on a volume, not in
         # /workspace, so ruff/mypy/semgrep on HEAD never scan it.
-        git worktree add --detach /baseline "$BASE_SHA"
+        git worktree add --detach /baseline "$$BASE_SHA"
     volumes:
       - name: baseline
         path: /baseline
-    waitFor: ["fetch-sujho"]
 
   # needs git for semgrep's --baseline-commit and `git ls-files`
   # (detect-secrets-hook's file list)
   - id: gate-1-static
-    name: python:3.12-slim
+    name: python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
     entrypoint: bash
     args:
       - -c
       - |
         set -euo pipefail
         apt-get update -qq && apt-get install -y -qq git >/dev/null
-        pip install --quiet ruff mypy semgrep detect-secrets
+        pip install --quiet ruff==0.6.9 mypy==1.11.2 semgrep==1.86.0 detect-secrets==1.5.0
         ruff check .
-        python3 ci/gates/mypy_ratchet.py \
-          --baseline-sha "$(cat /workspace/.baseline_sha)" \
-          --baseline-root /baseline
-        semgrep scan --config=auto --error --baseline-commit "$(cat /workspace/.baseline_sha)"
+        BASE_SHA="$(cat /workspace/.baseline_sha)"
+        if [ -n "$$BASE_SHA" ]; then
+          python3 ci/gates/mypy_ratchet.py \
+            --baseline-sha "$$BASE_SHA" --baseline-root /baseline
+          semgrep scan --config=p/ci --error --baseline-commit "$$BASE_SHA"
+        else
+          echo "first deploy: no baseline, absolute mode (every finding fails)"
+          python3 ci/gates/mypy_ratchet.py --absolute
+          semgrep scan --config=p/ci --error
+        fi
         detect-secrets-hook --baseline tests/ci/.secrets.baseline $(git ls-files)
     volumes:
       - name: baseline
@@ -124,7 +117,7 @@ steps:
   # non-knowledge_store job falls through to the honest "no tests yet" line
   # below, rather than silently skipping.
   - id: gate-2-invariants
-    name: python:3.12-slim
+    name: python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
     entrypoint: bash
     args:
       - -c
@@ -133,10 +126,11 @@ steps:
         if [ "${_PACKAGE}" = "knowledge_store" ]; then
           pip install --quiet -e ./infra -r tests/requirements.txt \
             -r knowledge_store/requirements.txt
+          # whole directory, not a hand-picked file list — a new test file
+          # under tests/unit/knowledge_store must run here automatically
           pytest -q \
             tests/unit/infra/test_catalog_job_args.py \
-            tests/unit/knowledge_store/test_graph_ids.py \
-            tests/unit/knowledge_store/test_embedder_batches.py
+            tests/unit/knowledge_store
         else
           echo "no invariant tests exist for this job's package yet — known gap, not run"
         fi
@@ -145,7 +139,7 @@ steps:
   # check_test_count runs `pytest --collect-only` over every suite: a fresh
   # container needs pytest and every app's deps.
   - id: gate-3-guardrails
-    name: python:3.12-slim
+    name: python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
     entrypoint: bash
     args:
       - -c
@@ -153,7 +147,7 @@ steps:
         set -euo pipefail
         pip install --quiet -e ./infra -r tests/requirements.txt \
           $(for f in */requirements.txt */app/requirements.txt; do \
-            [ -f "$f" ] && printf -- "-r %s " "$f"; \
+            [ -f "$$f" ] && printf -- "-r %s " "$$f"; \
           done)
         python3 tests/tooling/check_assertions.py
         python3 tests/tooling/check_test_count.py
@@ -164,7 +158,11 @@ steps:
     args:
       - --dockerfile=${_DOCKERFILE}
       - --context=dir:///workspace
-      - --destination=${_REGISTRY}/${_IMAGE}:sha-${_SHORT_SHA}
+      # candidate-, never sha-: the sha- tag Prod promotes from is only written
+      # by publish-verified-tag below, after the job has been run once and its
+      # schedule synced
+      - --destination=${_REGISTRY}/${_IMAGE}:candidate-${_SHORT_SHA}
+      - --digest-file=/workspace/.digest
       - --cache=true
       - --cache-ttl=168h
     waitFor: ["gate-3-guardrails"]
@@ -176,16 +174,36 @@ steps:
       - -c
       - |
         set -euo pipefail
+        DIGEST="$(cat /workspace/.digest)"
         gcloud run jobs deploy "${_JOB_ID}" \
           --project="${_TARGET_PROJECT}" --region="${_REGION}" \
-          --image="${_REGISTRY}/${_IMAGE}:sha-${_SHORT_SHA}" \
+          --image="${_REGISTRY}/${_IMAGE}@$${DIGEST}" \
           --command=python3 --args="-m,${_ENTRY_MODULE}" \
           --cpu="${_CPU}" --memory="${_MEMORY}" --task-timeout="${_TASK_TIMEOUT}" \
           --tasks="${_TASKS}" --parallelism="${_PARALLELISM}" --max-retries="${_MAX_RETRIES}" \
           --service-account="${_RUNTIME_SA}@${_TARGET_PROJECT}.iam.gserviceaccount.com" \
           --update-env-vars="RELEASE_COMMIT_SHA=${_COMMIT_SHA}"
-        echo "deployed ${_JOB_ID}, not executed"
+        echo "deployed ${_JOB_ID}"
     waitFor: ["build-image"]
+
+  # Prod promotes this image only after a real run. ingest and remove need an
+  # entry id the operator types later, so this build cannot be the one to run
+  # them; every other job is executed here and a failure stops the tag.
+  - id: prove-run
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        if [ "${_NEEDS_ENTRY_ID}" = "1" ]; then
+          echo "${_JOB_ID} needs an entry id, so it is not run in this build"
+          exit 0
+        fi
+        gcloud run jobs execute "${_JOB_ID}" \
+          --project="${_TARGET_PROJECT}" --region="${_REGION}" --wait
+        echo "ran ${_JOB_ID} once"
+    waitFor: ["deploy-job"]
 
   # no-op if the job has no schedule field — run-by-hand only
   - id: sync-schedule
@@ -202,21 +220,37 @@ steps:
         SCHED_NAME="${_JOB_ID}-schedule"
         SA="scheduler-invoker@${_TARGET_PROJECT}.iam.gserviceaccount.com"
         BASE="https://${_REGION}-run.googleapis.com/apis/run.googleapis.com/v1"
-        URI="${BASE}/namespaces/${_TARGET_PROJECT}/jobs/${_JOB_ID}:run"
-        if gcloud scheduler jobs describe "$SCHED_NAME" \
+        URI="$${BASE}/namespaces/${_TARGET_PROJECT}/jobs/${_JOB_ID}:run"
+        if gcloud scheduler jobs describe "$$SCHED_NAME" \
           --project="${_TARGET_PROJECT}" --location="${_REGION}" \
           >/dev/null 2>&1; then
-          gcloud scheduler jobs update http "$SCHED_NAME" \
+          gcloud scheduler jobs update http "$$SCHED_NAME" \
             --project="${_TARGET_PROJECT}" --location="${_REGION}" \
-            --schedule="${_SCHEDULE}" --uri="$URI" --http-method=POST \
-            --oauth-service-account-email="$SA"
+            --schedule="${_SCHEDULE}" --uri="$$URI" --http-method=POST \
+            --oauth-service-account-email="$$SA"
         else
-          gcloud scheduler jobs create http "$SCHED_NAME" \
+          gcloud scheduler jobs create http "$$SCHED_NAME" \
             --project="${_TARGET_PROJECT}" --location="${_REGION}" \
-            --schedule="${_SCHEDULE}" --uri="$URI" --http-method=POST \
-            --oauth-service-account-email="$SA"
+            --schedule="${_SCHEDULE}" --uri="$$URI" --http-method=POST \
+            --oauth-service-account-email="$$SA"
         fi
-        echo "scheduler entry ${SCHED_NAME}: ${_SCHEDULE}"
-    waitFor: ["deploy-job"]
+        echo "scheduler entry $${SCHED_NAME}: ${_SCHEDULE}"
+    waitFor: ["prove-run"]
+
+  # Only an image whose job deployed and whose schedule synced gets the
+  # sha-<commit> tag Prod looks for; a failed build leaves candidate- only.
+  - id: publish-verified-tag
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        DIGEST="$(cat /workspace/.digest)"
+        gcloud artifacts docker tags add \
+          "${_REGISTRY}/${_IMAGE}@$${DIGEST}" \
+          "${_REGISTRY}/${_IMAGE}:sha-${_SHORT_SHA}"
+        echo "sha-${_SHORT_SHA} -> $${DIGEST}: deployed in Pre-Prod, promotable"
+    waitFor: ["sync-schedule"]
 
 timeout: 3600s

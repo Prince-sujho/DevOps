@@ -1,19 +1,34 @@
 #!/usr/bin/env bash
-# GitHub Actions -> GCP login (WIF). Creates the pool/provider and six narrow
+# GitHub Actions -> GCP login (WIF). Creates the pool/provider and seven narrow
 # account identities (see IAM-table.md) — no role granted here, that's by hand.
+#
+# Each GitHub-side account trusts exactly ONE OIDC subject, never "any
+# workflow in the repo":
+#   preprod deploy/rollback, eval  repo:Sujho/sujho:ref:refs/heads/main
+#   prod deploy                    repo:Sujho/sujho:environment:production
+#   prod rollback                  repo:Sujho/sujho:environment:production-rollback
+# A job only gets an environment:* subject after that GitHub Environment's
+# approval, so a workflow on another branch (or one that skips the
+# `environment:` line) cannot impersonate a prod account.
+# The pool lives in the PROD project, not Pre-Prod. Whoever can administer the
+# host project can edit the pool, its provider condition and its bindings — so
+# hosting it in Pre-Prod would have let anyone with Pre-Prod admin mint tokens
+# for the Prod deploy account. Prod is the more closely held project, so it
+# hosts the pool and Pre-Prod trusts it, not the other way round.
 # Dry-run unless --apply. Fill GITHUB_OWNER_ID first: gh api orgs/Sujho --jq .id
 #
-# Usage: GITHUB_OWNER_ID=<digits> [WIF_PROJECT=sujho-preprod] ./provision-wif.sh [--apply]
+# Usage: GITHUB_OWNER_ID=<digits> [WIF_PROJECT=sujho-478914] ./provision-wif.sh [--apply]
 # Arguments: --apply — actually run the gcloud commands (default: print only).
 # Exit codes: 0 ok; 1 unknown argument, missing/placeholder/non-numeric
 #   GITHUB_OWNER_ID, or (with --apply) a project number lookup failure.
 
 set -euo pipefail
 
-WIF_PROJECT="${WIF_PROJECT:-sujho-preprod}"
+WIF_PROJECT="${WIF_PROJECT:-sujho-478914}"
 PROD_PROJECT="sujho-478914"
 PREPROD_PROJECT="sujho-preprod"
 GITHUB_ORG="Sujho"
+GITHUB_REPO="sujho"
 GITHUB_OWNER_ID="${GITHUB_OWNER_ID:-REPLACE_WITH_GITHUB_ORG_NUMERIC_ID}"
 POOL_ID="github-pool"
 PROVIDER_ID="github-provider"
@@ -24,7 +39,7 @@ for arg in "$@"; do
     --apply) APPLY=1 ;;
     -h|--help)
       cat <<'EOF'
-usage: GITHUB_OWNER_ID=<digits> [WIF_PROJECT=sujho-preprod] ./provision-wif.sh [--apply]
+usage: GITHUB_OWNER_ID=<digits> [WIF_PROJECT=sujho-478914] ./provision-wif.sh [--apply]
 
 Default is dry-run (prints gcloud, changes nothing).
 --apply creates the pool/provider/account identities in GCP. It never
@@ -71,16 +86,24 @@ provider_resource() {
   echo "$(pool_resource "$number")/providers/${PROVIDER_ID}"
 }
 
-repo_member() {
-  local number="$1"
+# One exact OIDC subject (google.subject = assertion.sub), not the whole repo.
+# Args: project number of the WIF host, subject suffix after "repo:ORG/REPO:".
+subject_member() {
+  local number="$1" suffix="$2"
   local pool
   pool="$(pool_resource "$number")"
-  echo "principalSet://iam.googleapis.com/${pool}/attribute.repository/${GITHUB_ORG}/sujho"
+  echo "principal://iam.googleapis.com/${pool}/subject/repo:${GITHUB_ORG}/${GITHUB_REPO}:${suffix}"
 }
+
+SUBJECT_MAIN="ref:refs/heads/main"
+SUBJECT_PROD="environment:production"
+SUBJECT_PROD_ROLLBACK="environment:production-rollback"
 
 echo "WIF host project: ${WIF_PROJECT}"
 echo "GitHub owner id (pinned): ${GITHUB_OWNER_ID}"
-echo "Provider condition: assertion.repository_owner_id == '${GITHUB_OWNER_ID}'"
+ATTRIBUTE_CONDITION="assertion.repository_owner_id == '${GITHUB_OWNER_ID}'"
+ATTRIBUTE_CONDITION+=" && assertion.repository == '${GITHUB_ORG}/${GITHUB_REPO}'"
+echo "Provider condition: ${ATTRIBUTE_CONDITION}"
 if [ "$APPLY" -eq 0 ]; then
   echo "DRY-RUN — no GCP changes. Pass --apply only when a Lead asks."
 fi
@@ -111,7 +134,7 @@ run gcloud iam workload-identity-pools providers create-oidc "$PROVIDER_ID" \
   --display-name="GitHub OIDC" \
   --issuer-uri="https://token.actions.githubusercontent.com" \
   --attribute-mapping="$ATTRIBUTE_MAPPING" \
-  --attribute-condition="assertion.repository_owner_id == '${GITHUB_OWNER_ID}'"
+  --attribute-condition="$ATTRIBUTE_CONDITION"
 
 # these only ask Cloud Build to run something, never run it themselves
 run gcloud iam service-accounts create github-deploy-preprod \
@@ -122,6 +145,10 @@ run gcloud iam service-accounts create github-deploy-prod \
   --project="$PROD_PROJECT" --display-name="github-deploy-prod"
 run gcloud iam service-accounts create github-rollback-prod \
   --project="$PROD_PROJECT" --display-name="github-rollback-prod"
+
+# Phase 3's weekly eval replay: reads the eval-* secrets, nothing else
+run gcloud iam service-accounts create github-eval \
+  --project="$PREPROD_PROJECT" --display-name="github-eval"
 
 # the narrow key the build machine itself runs as — see IAM-table.md section 2
 run gcloud iam service-accounts create prod-builder \
@@ -136,18 +163,19 @@ else
   WIF_NUMBER="PROJECT_NUMBER"
 fi
 
-bind_repo() {
-  local sa_id="$1" project="$2"
+bind_subject() {
+  local sa_id="$1" project="$2" suffix="$3"
   run gcloud iam service-accounts add-iam-policy-binding "$(sa_email "$sa_id" "$project")" \
     --project="$project" \
     --role="roles/iam.workloadIdentityUser" \
-    --member="$(repo_member "$WIF_NUMBER")"
+    --member="$(subject_member "$WIF_NUMBER" "$suffix")"
 }
 
-bind_repo github-deploy-preprod "$PREPROD_PROJECT"
-bind_repo github-rollback-preprod "$PREPROD_PROJECT"
-bind_repo github-deploy-prod "$PROD_PROJECT"
-bind_repo github-rollback-prod "$PROD_PROJECT"
+bind_subject github-deploy-preprod "$PREPROD_PROJECT" "$SUBJECT_MAIN"
+bind_subject github-rollback-preprod "$PREPROD_PROJECT" "$SUBJECT_MAIN"
+bind_subject github-deploy-prod "$PROD_PROJECT" "$SUBJECT_PROD"
+bind_subject github-rollback-prod "$PROD_PROJECT" "$SUBJECT_PROD_ROLLBACK"
+bind_subject github-eval "$PREPROD_PROJECT" "$SUBJECT_MAIN"
 
 echo
 echo "identities created, no roles granted — work through IAM-table.md next"
@@ -159,3 +187,4 @@ rollback_preprod_email="$(sa_email github-rollback-preprod "$PREPROD_PROJECT")"
 echo "  GCP_WIF_SERVICE_ACCOUNT_PREPROD_ROLLBACK=${rollback_preprod_email}"
 echo "  GCP_WIF_SERVICE_ACCOUNT_PROD=$(sa_email github-deploy-prod "$PROD_PROJECT")"
 echo "  GCP_WIF_SERVICE_ACCOUNT_PROD_ROLLBACK=$(sa_email github-rollback-prod "$PROD_PROJECT")"
+echo "  GCP_WIF_SERVICE_ACCOUNT_EVAL=$(sa_email github-eval "$PREPROD_PROJECT")"

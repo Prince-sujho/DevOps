@@ -6,6 +6,10 @@
 # Arguments: --apply — actually open the PR on GitHub (default: dry-run/plan only).
 # Exit codes: 0 ok/dry-run; 1 (via die) unknown argument, or local Phase 2
 #   invariants (validate.py / jobs/validate.py) failed.
+#
+# There is no required-status-check flag on purpose: decision 11 is that
+# nothing runs on a pull request. Every gate runs in the Pre-Prod build,
+# before anything is deployed.
 
 usage() {
   cat <<'EOF'
@@ -24,12 +28,6 @@ source "${PHASE2_DIR}/../phase1/lib.sh"
 # shellcheck source=lib.sh
 source "${PHASE2_DIR}/lib.sh"
 
-for arg in "$@"; do
-  case "$arg" in
-    --apply|-h|--help) ;;
-    *) die "unknown argument: $arg" ;;
-  esac
-done
 if ! parse_apply_flag "$@"; then
   usage
   exit 0
@@ -37,6 +35,7 @@ fi
 
 python3 "${PHASE2_DIR}/validate.py" || die "Phase 2 local invariants failed"
 python3 "${PHASE2_DIR}/jobs/validate.py" || die "Phase 2 jobs local invariants failed"
+
 
 if [ "$APPLY" -eq 0 ]; then
   echo "DRY-RUN (pass --apply to open the PR onto ${ORG}/${PHASE2_REPO})"

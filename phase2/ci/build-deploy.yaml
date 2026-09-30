@@ -1,6 +1,9 @@
 # Shared Pre-Prod recipe for every service. Values come from ci/services.json.
 # Runs in sujho-preprod only. Order: gates -> build -> no-traffic deploy -> verify -> shift traffic.
-# Submitted with --no-source, so the workspace starts empty — fetch-sujho is what fills it.
+# Submitted as real source (`gcloud builds submit .`) by the calling workflow:
+# it already has the exact commit checked out with full history, so this
+# workspace starts populated, .git included. Nothing is fetched from GitHub
+# from inside Cloud Build, so no GitHub credential ever lives here.
 
 substitutions:
   _SERVICE_NAME: ""
@@ -11,39 +14,38 @@ substitutions:
   _TIMEOUT: "240s"
   _MIN_INSTANCES: "1"
   _MAX_INSTANCES: "10"
-  _RUN_ARGS: "--allow-unauthenticated"
+  # extra gcloud run deploy flags from services.json run_args. Never a flag
+  # that decides who may call the service: those set the service's IAM
+  # policy, which needs run.admin, and the builder only has run.developer.
+  # Public access is a one-time Lead decision (IAM-table.md 3d), not
+  # something a deploy re-decides on every release.
+  _RUN_ARGS: ""
+  # runtime identity the container acts as; the deploy refuses without one, so
+  # nothing ever silently runs as the project's default compute account
+  _RUNTIME_SA: ""
+  # ';'-separated, converted to ',' below: this whole substitutions string is
+  # comma-separated, so a comma inside one value would start a new substitution
+  _SECRETS: ""
+  _ENV_VARS: ""
   _VERIFY_METHOD: "health"
   _TARGET_PROJECT: "sujho-preprod"
   _REGISTRY: "asia-south1-docker.pkg.dev/sujho-preprod/services"
   _COMMIT_SHA: ""
   _SHORT_SHA: ""
   _REGION: "asia-south1"
-  _DC_CONNECTION: "sujho-github-dc-org"
+  # only for a first deploy, or to re-baseline on purpose; empty = read it off
+  # the live revision (resolve_baseline.py)
+  _BASELINE_SHA: ""
 
 options:
   logging: CLOUD_LOGGING_ONLY
 
 steps:
-  # inline, self-contained: nothing from this repo exists in the workspace
-  # yet, so this can't call a script that lives inside it (circular)
-  - id: fetch-sujho
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
-    entrypoint: bash
-    args:
-      - -c
-      - |
-        set -euo pipefail
-        URI="$(gcloud developer-connect git-repository-links describe sujho-sujho \
-          --location="${_REGION}" --connection="${_DC_CONNECTION}" --project="${_TARGET_PROJECT}" \
-          --format='value(cloneUri)')"
-        [ -n "$URI" ] || { echo "refuse: sujho-sujho Developer Connect link not found"; exit 1; }
-        git init .
-        git remote add origin "$URI"
-        git fetch --depth=1 origin "${_COMMIT_SHA}"
-        git checkout --force "${_COMMIT_SHA}"
-
-  # baseline for semgrep/mypy = whatever's live now, read off the revision's
-  # own env var, not an unverified annotation value
+  # baseline for semgrep/mypy = whatever's live now, read off the serving
+  # revision's own env var, not an unverified annotation value. An explicit
+  # _BASELINE_SHA (workflow input) wins. No baseline at all = first deploy:
+  # the gates then run in absolute mode rather than silently comparing HEAD
+  # with itself.
   - id: resolve-baseline
     name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
     entrypoint: bash
@@ -51,61 +53,69 @@ steps:
       - -c
       - |
         set -euo pipefail
-        BASE_SHA="$(python3 ci/gates/resolve_baseline.py --kind=services \
-          --name="${_SERVICE_NAME}" --project="${_TARGET_PROJECT}" --region="${_REGION}")"
-        if [ -z "$BASE_SHA" ]; then
-          echo "no prior revision for ${_SERVICE_NAME}, first deploy"
-          BASE_SHA="${_COMMIT_SHA}"
+        BASE_SHA="${_BASELINE_SHA}"
+        if [ -z "$$BASE_SHA" ]; then
+          BASE_SHA="$(python3 ci/gates/resolve_baseline.py --kind=services \
+            --name="${_SERVICE_NAME}" --project="${_TARGET_PROJECT}" --region="${_REGION}")"
         fi
-        # Decision 14: semgrep and mypy compare against the deployed commit.
-        # fetch-sujho fetched only the deploy SHA at depth 1; semgrep's baseline
-        # runs `git diff --merge-base`, which needs the history joining the two.
-        # Full history of this small repo, fetched here where the Developer
-        # Connect credentials are. If the baseline isn't there, fail the build.
-        if [ "$BASE_SHA" != "${_COMMIT_SHA}" ]; then
-          git fetch --unshallow origin
+        if [ -z "$$BASE_SHA" ]; then
+          echo "WARNING: no prior revision for ${_SERVICE_NAME}: first deploy, gates run in absolute mode"
+          : > /workspace/.baseline_sha
+          exit 0
         fi
-        git cat-file -e "$BASE_SHA^{commit}"
-        echo "$BASE_SHA" > /workspace/.baseline_sha
-        echo "baseline commit: $BASE_SHA"
+        # semgrep's baseline runs `git diff --merge-base`, which needs the
+        # history joining the two commits; the uploaded .git is full history.
+        # If the baseline isn't in it, fail the build.
+        git cat-file -e "$$BASE_SHA^{commit}"
+        echo "$$BASE_SHA" > /workspace/.baseline_sha
+        echo "baseline commit: $$BASE_SHA"
         # The mypy ratchet must count the same tree on both sides: the baseline
         # commit's own worktree, just as HEAD has it. Built on a volume, not in
         # /workspace, so ruff/mypy/semgrep on HEAD never scan it.
-        git worktree add --detach /baseline "$BASE_SHA"
+        git worktree add --detach /baseline "$$BASE_SHA"
     volumes:
       - name: baseline
         path: /baseline
-    waitFor: ["fetch-sujho"]
 
   # gate 1: static — ruff, mypy ratchet, semgrep, secrets. Needs git for
   # semgrep's --baseline-commit and detect-secrets' file list; python:3.12-slim has none.
   - id: gate-1-static
-    name: python:3.12-slim
+    name: python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
     entrypoint: bash
     args:
       - -c
       - |
         set -euo pipefail
         apt-get update -qq && apt-get install -y -qq git >/dev/null
-        pip install --quiet ruff mypy semgrep detect-secrets
+        pip install --quiet ruff==0.6.9 mypy==1.11.2 semgrep==1.86.0 detect-secrets==1.5.0
         ruff check .
-        python3 ci/gates/mypy_ratchet.py \
-          --baseline-sha "$(cat /workspace/.baseline_sha)" \
-          --baseline-root /baseline
-        semgrep scan --config=auto --error --baseline-commit "$(cat /workspace/.baseline_sha)"
+        BASE_SHA="$(cat /workspace/.baseline_sha)"
+        if [ -n "$$BASE_SHA" ]; then
+          python3 ci/gates/mypy_ratchet.py \
+            --baseline-sha "$$BASE_SHA" --baseline-root /baseline
+          semgrep scan --config=p/ci --error --baseline-commit "$$BASE_SHA"
+        else
+          echo "first deploy: no baseline, absolute mode (every finding fails)"
+          python3 ci/gates/mypy_ratchet.py --absolute
+          semgrep scan --config=p/ci --error
+        fi
         detect-secrets-hook --baseline tests/ci/.secrets.baseline $(git ls-files)
     volumes:
       - name: baseline
         path: /baseline
-    waitFor: ["fetch-sujho", "resolve-baseline"]
+    waitFor: ["resolve-baseline"]
 
-  # gate 2: the 65 kept tests, plus knowledge_store's 9 pure-logic additions,
-  # against a Firestore emulator. tests/knowledge_store's other 10 tests (real
-  # Neo4j via Docker) are verified locally -- 10/10 pass, see
-  # tests/knowledge_store/requirements-test.txt -- but not run here: this step
-  # has no Docker daemon reachable, and none of Cloud Build's plain containers
-  # do by default. Wiring that in is separate work (a docker-enabled step or
-  # self-hosted worker), not done yet.
+  # gate 2: the full unit/api/integration/e2e directories (minus
+  # tests/knowledge_store, see below), against a Firestore emulator.
+  # tests/knowledge_store's 10 tests (real Neo4j via Docker) are verified
+  # locally -- 10/10 pass, see tests/knowledge_store/requirements-test.txt --
+  # but not run here: this step has no Docker daemon reachable, and none of
+  # Cloud Build's plain containers do by default. Wiring that in is separate
+  # work (a docker-enabled step or self-hosted worker), not done yet.
+  #
+  # Whole directories, not a hand-picked file list — a new test file under
+  # unit/api/integration/e2e must run here automatically, the same guarantee
+  # gate-3's check_test_count.py already gives its own collection count.
   #
   # Three separate pytest invocations, not one. tests/integration/conftest.py
   # and tests/e2e/conftest.py each start their OWN independent Firestore
@@ -117,51 +127,43 @@ steps:
   # all. Confirmed by running it the other way first: it produced real,
   # intermittent errors in test_cross_service_contract.py.
   - id: gate-2-invariants
-    name: python:3.12-slim
+    name: python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
     entrypoint: bash
     args:
       - -c
       - |
         set -euo pipefail
         apt-get update -qq && apt-get install -y -qq default-jre-headless curl >/dev/null
-        # Skips host-side Python compilation during the SDK install; documented
-        # speedup for CI/containers, no effect on the emulator itself.
+        # Exact SDK version, not the moving "latest" installer script. Skips
+        # host-side Python compilation during the install; documented speedup
+        # for CI/containers, no effect on the emulator itself.
         export CLOUDSDK_SKIP_PY_COMPILATION=1
-        curl -sSL https://sdk.cloud.google.com | bash -s -- --disable-prompts >/dev/null
+        curl -sSL "https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-581.0.0-linux-x86_64.tar.gz" \
+          | tar -xz -C /opt
+        /opt/google-cloud-sdk/install.sh --quiet --usage-reporting=false \
+          --path-update=false --command-completion=false >/dev/null
+        export PATH="/opt/google-cloud-sdk/bin:$$PATH"
         # Installed once; tests/integration and tests/e2e each invoke this
         # binary themselves, on their own port, when their own fixture runs.
         gcloud components install cloud-firestore-emulator --quiet
         # each app imports its own deps at import time (dotenv, segno, ...)
         pip install --quiet -e ./infra -r tests/requirements.txt \
           $(for f in */requirements.txt */app/requirements.txt; do \
-            [ -f "$f" ] && printf -- "-r %s " "$f"; \
+            [ -f "$$f" ] && printf -- "-r %s " "$$f"; \
           done)
 
-        pytest -q \
-          tests/api/user_service/test_auth_boundary.py \
-          tests/api/whatsapp_adapter/test_webhook_signature.py \
-          tests/api/text_agent/test_auth_boundary.py \
-          tests/api/document_worker/test_auth_boundary.py \
-          tests/unit/whatsapp_adapter/test_flow_crypto.py \
-          tests/unit/infra/test_leases.py \
-          tests/unit/infra/test_pricing.py \
-          tests/unit/infra/test_catalog_job_args.py \
-          tests/unit/user_service/test_gifting.py \
-          tests/unit/user_service/test_influencers.py \
-          tests/unit/user_service/test_user_id.py \
-          tests/unit/knowledge_store/test_graph_ids.py \
-          tests/unit/knowledge_store/test_embedder_batches.py
+        pytest -q tests/unit tests/api
 
         pytest -q tests/integration
 
-        pytest -q tests/e2e/test_idempotency.py tests/e2e/test_webhook_signature.py
+        pytest -q tests/e2e
     waitFor: ["gate-1-static"]
 
   # gate 3: suite guardrails — assertions real, count hasn't dropped.
   # check_test_count runs `pytest --collect-only`, which imports every suite:
   # a fresh container needs pytest and every app's deps, same as gate 2.
   - id: gate-3-guardrails
-    name: python:3.12-slim
+    name: python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
     entrypoint: bash
     args:
       - -c
@@ -169,14 +171,14 @@ steps:
         set -euo pipefail
         pip install --quiet -e ./infra -r tests/requirements.txt \
           $(for f in */requirements.txt */app/requirements.txt; do \
-            [ -f "$f" ] && printf -- "-r %s " "$f"; \
+            [ -f "$$f" ] && printf -- "-r %s " "$$f"; \
           done)
         python3 tests/tooling/check_assertions.py
         python3 tests/tooling/check_test_count.py
     waitFor: ["gate-2-invariants"]
 
   - id: pre-build
-    name: gcr.io/cloud-builders/npm
+    name: gcr.io/cloud-builders/npm@sha256:c7fbdccd9d126c5a5276a64faf9158929b2e402c1184471a65d340b1de981177
     entrypoint: bash
     args:
       - -c
@@ -191,7 +193,10 @@ steps:
     args:
       - --dockerfile=${_DOCKERFILE}
       - --context=dir:///workspace
-      - --destination=${_REGISTRY}/${_SERVICE_NAME}:sha-${_SHORT_SHA}
+      # candidate-, never sha-: the sha- tag Prod promotes from is only written
+      # by publish-verified-tag below, after verify and the traffic shift
+      - --destination=${_REGISTRY}/${_SERVICE_NAME}:candidate-${_SHORT_SHA}
+      - --digest-file=/workspace/.digest
       - --cache=true
       - --cache-ttl=168h
     waitFor: ["pre-build"]
@@ -203,14 +208,38 @@ steps:
       - -c
       - |
         set -euo pipefail
-        gcloud run deploy "${_SERVICE_NAME}" \
-          --project="${_TARGET_PROJECT}" --region="${_REGION}" \
-          --image="${_REGISTRY}/${_SERVICE_NAME}:sha-${_SHORT_SHA}" \
-          --no-traffic --tag="build-${_SHORT_SHA}" \
-          --cpu="${_CPU}" --memory="${_MEMORY}" --timeout="${_TIMEOUT}" \
-          --min-instances="${_MIN_INSTANCES}" --max-instances="${_MAX_INSTANCES}" \
-          --update-env-vars="RELEASE_COMMIT_SHA=${_COMMIT_SHA},RELEASE_IMAGE_DIGEST=pending" \
-          ${_RUN_ARGS}
+        DIGEST="$(cat /workspace/.digest)"
+        if [ -z "${_RUNTIME_SA}" ]; then
+          echo "Refuse: no runtime_sa for ${_SERVICE_NAME} in ci/services.json."
+          echo "Without it the container runs as the default compute account,"
+          echo "which is far broader than any one service needs."
+          exit 1
+        fi
+        # --update-*, never --set-*/--clear-*: an incomplete list in
+        # services.json must not strip config the service already has.
+        ENV_ARG="RELEASE_COMMIT_SHA=${_COMMIT_SHA},RELEASE_IMAGE_DIGEST=$${DIGEST}"
+        EXTRA_ENV="$(printf '%s' "${_ENV_VARS}" | tr ';' ',')"
+        if [ -n "$$EXTRA_ENV" ]; then
+          ENV_ARG="$${ENV_ARG},$${EXTRA_ENV}"
+        fi
+        ARGS=(
+          --project="${_TARGET_PROJECT}"
+          --region="${_REGION}"
+          --image="${_REGISTRY}/${_SERVICE_NAME}@$${DIGEST}"
+          --no-traffic
+          --tag="build-${_SHORT_SHA}"
+          --cpu="${_CPU}"
+          --memory="${_MEMORY}"
+          --timeout="${_TIMEOUT}"
+          --min-instances="${_MIN_INSTANCES}"
+          --max-instances="${_MAX_INSTANCES}"
+          --service-account="${_RUNTIME_SA}@${_TARGET_PROJECT}.iam.gserviceaccount.com"
+          --update-env-vars="$${ENV_ARG}"
+        )
+        if [ -n "${_SECRETS}" ]; then
+          ARGS+=(--update-secrets="$(printf '%s' "${_SECRETS}" | tr ';' ',')")
+        fi
+        gcloud run deploy "${_SERVICE_NAME}" "$${ARGS[@]}" ${_RUN_ARGS}
     waitFor: ["build-image"]
 
   # polls up to 15x so a slow-starting container doesn't fail the check
@@ -221,10 +250,16 @@ steps:
       - -c
       - |
         set -euo pipefail
+        # --expect-digest is the part that can actually fail: it reads the
+        # image the revision is running and compares it against the digest
+        # this same build produced (Pre-Prod) or resolved (Prod). The commit
+        # sha is a self-consistency check on top of that, not proof on its own.
         python3 ci/gates/verify_revision.py \
           --service="${_SERVICE_NAME}" --project="${_TARGET_PROJECT}" \
           --region="${_REGION}" --tag="build-${_SHORT_SHA}" \
-          --expect-sha="${_COMMIT_SHA}" --method="${_VERIFY_METHOD}" \
+          --expect-sha="${_COMMIT_SHA}" \
+          --expect-digest="$(cat /workspace/.digest)" \
+          --method="${_VERIFY_METHOD}" \
           --attempts=15
     waitFor: ["deploy-no-traffic"]
 
@@ -235,18 +270,53 @@ steps:
       - -c
       - |
         set -euo pipefail
+        tag_revision() {
+          python3 ci/gates/verify_revision.py --print-revision --allow-missing \
+            --service="${_SERVICE_NAME}" --project="${_TARGET_PROJECT}" \
+            --region="${_REGION}" --tag="$$1"
+        }
+        traffic() {
+          gcloud run services update-traffic "${_SERVICE_NAME}" \
+            --project="${_TARGET_PROJECT}" --region="${_REGION}" "$$@"
+        }
         # the revision verify just checked, by its tag -- not --to-latest and
         # not status.traffic[0], which can be an old 0% tagged entry
-        REVISION="$(python3 ci/gates/verify_revision.py --print-revision \
-          --service="${_SERVICE_NAME}" --project="${_TARGET_PROJECT}" \
-          --region="${_REGION}" --tag="build-${_SHORT_SHA}")"
-        gcloud run services update-traffic "${_SERVICE_NAME}" \
-          --project="${_TARGET_PROJECT}" --region="${_REGION}" \
-          --to-revisions="$REVISION=100"
-        gcloud run revisions update "$REVISION" \
-          --project="${_TARGET_PROJECT}" --region="${_REGION}" \
-          --update-labels=served=true
-        echo "traffic on $REVISION, served=true"
+        REVISION="$(tag_revision "build-${_SHORT_SHA}")"
+        # Whatever is known-good right now becomes the rollback target.
+        # A Cloud Run revision's labels are fixed when it is created, and
+        # gcloud has no command to change them later, so "this revision took
+        # traffic and passed" is recorded as a traffic tag on the service,
+        # which is editable: lkg = serving now, prev = the one before it.
+        PREVIOUS_GOOD="$(tag_revision lkg)"
+        # One call. Traffic, prev, lkg and dropping the build tag are a single
+        # service update, so a build that dies cannot leave traffic on the new
+        # revision while prev still names the one before the good one.
+        TAGS="lkg=$$REVISION"
+        if [ -n "$$PREVIOUS_GOOD" ] && [ "$$PREVIOUS_GOOD" != "$$REVISION" ]; then
+          TAGS="prev=$$PREVIOUS_GOOD,$$TAGS"
+        fi
+        traffic \
+          --to-revisions="$$REVISION=100" \
+          --update-tags="$$TAGS" \
+          --remove-tags="build-${_SHORT_SHA}"
+        echo "traffic on $$REVISION (lkg); rollback target $${PREVIOUS_GOOD:-none yet}"
     waitFor: ["verify"]
+
+  # Only an image that passed gates, verify and the traffic shift gets the
+  # sha-<commit> tag Prod looks for. A build that failed anywhere above leaves
+  # only candidate-<commit>, which deploy-only.yaml refuses to promote.
+  - id: publish-verified-tag
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:5f165a095e127672d76863f139547c6c3fda20fc152a02cf8b0d1195a6017be2
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        DIGEST="$(cat /workspace/.digest)"
+        gcloud artifacts docker tags add \
+          "${_REGISTRY}/${_SERVICE_NAME}@$${DIGEST}" \
+          "${_REGISTRY}/${_SERVICE_NAME}:sha-${_SHORT_SHA}"
+        echo "sha-${_SHORT_SHA} -> $${DIGEST}: verified in Pre-Prod, promotable"
+    waitFor: ["shift-traffic"]
 
 timeout: 3600s

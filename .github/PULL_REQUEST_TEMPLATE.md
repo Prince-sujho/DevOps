@@ -1,8 +1,9 @@
 <!--
-No automated check runs before this merges. You are the gate. Semgrep,
-detect-secrets, and the ~65 invariant tests all run later, in the Pre-Prod
-build — after this merges, before anything is deployed. This checklist is
-what stands between this change and `main`.
+Nothing automated runs on this pull request (decision 11). Every gate — ruff,
+the mypy ratchet, semgrep, detect-secrets, the invariant tests and the suite
+guardrails — runs in the Pre-Prod build instead, so it fails when someone
+tries to deploy, not when they try to merge. Until then this checklist and
+the Lead reading the diff are the only things between this change and `main`.
 -->
 
 ## How to review — trace it, don't pattern-match
@@ -30,10 +31,13 @@ most valuable thing to catch here.
   15s). Flag operations whose latency could approach it.
 - **Concurrent-write races.** `text`, `users`, `document-worker` scale
   beyond 1 instance — flag non-transactional/non-idempotent writes.
-- **A changed code path with no corresponding test.** Nothing automated
-  checks this anymore — it's on you.
+- **A changed code path with no corresponding test.** Nothing checks this,
+  here or later — it's on you.
 - **Tests deleted or weakened.** Removed tests, loosened assertions, tests
-  marked skip/xfail. Nothing automated catches this either.
+  marked skip/xfail. The Pre-Prod build's guardrail gate
+  (`check_assertions.py`, `check_test_count.py`) does catch a dropped count
+  or a test with no real assertion — but only at deploy time, on whoever
+  deploys next, and it cannot see a test that was quietly narrowed.
 
 ### Security / compliance
 - Hardcoded secrets, API keys, tokens, or credentials in code.

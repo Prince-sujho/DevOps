@@ -1,7 +1,11 @@
 name: Deploy Cloud Run job (Prod)
 
-# Manual only. Deploys the exact image already tested on Pre-Prod, never rebuilds.
-# Same environment: production gate as cloud-run-prod-service.yaml.
+# Manual only. Deploys the exact image already verified on Pre-Prod, never
+# rebuilds. Same environment: production gate as cloud-run-prod-service.yaml,
+# and GCP trusts only that Environment's OIDC subject
+# (repo:Sujho/sujho:environment:production). Nothing authenticates to GCP
+# before approval; the "tested image exists" check runs inside Cloud Build
+# (job-deploy-only.yaml's resolve-digest).
 
 on:
   workflow_dispatch:
@@ -18,7 +22,9 @@ on:
           - knowledge-store-import-ncert
           - knowledge-store-import-educart
       commit:
-        description: Git commit to deploy — the one tested on Pre-Prod. Typed once.
+        description: >-
+          Full 40-character git commit to deploy — the one verified on
+          Pre-Prod. Typed once.
         required: true
         type: string
       entry_id:
@@ -45,45 +51,28 @@ jobs:
     steps:
       - name: Refuse unless this run is on main
         run: |
-          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
-            echo "Refuse: dispatch from main, not ${{ github.ref }}"
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "Refuse: dispatch from main, not $GITHUB_REF"
             exit 1
           fi
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Refuse unless the typed commit is an ancestor of main
+      - name: Refuse unless the typed commit is a full SHA and an ancestor of main
+        env:
+          COMMIT: ${{ inputs.commit }}
         run: |
           set -euo pipefail
-          git fetch origin main
-          if ! git merge-base --is-ancestor "${{ inputs.commit }}" origin/main; then
-            echo "Refuse: ${{ inputs.commit }} is not on main."
+          if ! printf '%s' "$COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "Refuse: commit must be the full 40-character lowercase SHA."
             exit 1
           fi
-
-      - uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
-        with:
-          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
-          service_account: ${{ vars.GCP_WIF_SERVICE_ACCOUNT_PROD }}
-
-      - uses: google-github-actions/setup-gcloud@6a7c903a70c8625ed6700fa299f5ddb4ca6022e9 # v2.1.5
-
-      - name: Refuse unless the tested image actually exists
-        env:
-          JOB_ID: ${{ inputs.job }}
-          SHA: ${{ inputs.commit }}
-        run: |
-          set -euo pipefail
-          SHORT="$(printf '%s' "$SHA" | cut -c1-7)"
-          eval "$(python3 jobs/scripts/lookup_job.py --id "$JOB_ID")"
-          REGISTRY="asia-south1-docker.pkg.dev/sujho-preprod/services"
-          DIGEST="$(gcloud artifacts docker images describe \
-            "$REGISTRY/$IMAGE:sha-$SHORT" --format='value(image_summary.digest)' || true)"
-          if [ -z "$DIGEST" ]; then
-            echo "Refuse: $REGISTRY/$IMAGE:sha-$SHORT" \
-              "does not exist. Nothing was tested to promote."
+          git cat-file -e "${COMMIT}^{commit}"
+          if ! git merge-base --is-ancestor "$COMMIT" origin/main; then
+            echo "Refuse: $COMMIT is not on main."
             exit 1
           fi
 
@@ -96,6 +85,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.commit }}
+          persist-credentials: false
 
       - uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
         with:
@@ -110,7 +100,7 @@ jobs:
           SHA: ${{ inputs.commit }}
         run: |
           set -euo pipefail
-          SHORT="$(printf '%s' "$SHA" | cut -c1-7)"
+          SHORT="$(printf '%s' "$SHA" | cut -c1-12)"
           eval "$(python3 jobs/scripts/lookup_job.py --id "$JOB_ID")"
 
           # one quoted string: values with spaces stay one substitution
@@ -128,7 +118,14 @@ jobs:
           SUBS+=",_COMMIT_SHA=$SHA"
           SUBS+=",_SHORT_SHA=$SHORT"
 
-          gcloud builds submit --no-source \
+          # sujho-478914 has no Developer Connect link, so the checkout above
+          # is uploaded as real source. No .git, no credentials file.
+          IGNORE="$RUNNER_TEMP/deploy.gcloudignore"
+          printf '%s\n' '.git' 'gha-creds-*.json' > "$IGNORE"
+
+          gcloud builds submit . \
+            --ignore-file="$IGNORE" \
+            --gcs-source-staging-dir=gs://sujho-478914-build-source/source \
             --project=sujho-478914 \
             --region=asia-south1 \
             --config=ci/job-deploy-only.yaml \
@@ -145,6 +142,14 @@ jobs:
           if [ "$NEEDS_ENTRY_ID" = "1" ]; then
             if [ -z "$ENTRY_ID" ]; then
               echo "this job needs entry_id to execute"
+              exit 1
+            fi
+            # --args is comma-separated, so a comma in entry_id would append
+            # extra arguments to the job's command line. Allow only the shape
+            # a real entry id has.
+            if ! printf '%s' "$ENTRY_ID" | grep -Eq '^[A-Za-z0-9_.:-]{1,128}$'; then
+              echo "Refuse: entry_id must be 1-128 characters of"
+              echo "[A-Za-z0-9_.:-] — no commas, spaces or shell characters."
               exit 1
             fi
             gcloud run jobs execute "$JOB_ID" \

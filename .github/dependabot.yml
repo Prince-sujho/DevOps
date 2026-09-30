@@ -1,12 +1,35 @@
-# One copy of this file per repo (Sujho/sujho and all eleven service repos).
+# One copy of this file per repo. Post-phase0: Sujho/sujho (the 8 backend
+# repos merged in), sujho-ops-mcp, design-system, docs, hiring, www.
 # Weekly, not per-PR — this is a bot opening its own PRs, not a gate on
 # anyone else's. Those PRs go through the normal one-Lead-approval path
 # like any other change.
+#
+# Every directory that actually holds a requirements.txt is listed. "/" alone
+# would have watched nothing but the root: post-phase0 each service keeps its
+# own file inside its own subdirectory (tests/ci/paths.py has the same list),
+# and those are the ones that end up in a deployed image.
 
 version: 2
 updates:
   - package-ecosystem: "pip"
-    directory: "/"
+    directories:
+      - "/"
+      - "/tests"
+      - "/infra"
+      - "/user_service/app"
+      - "/whatsapp_adapter/app"
+      - "/text_agent/app"
+      - "/document_worker"
+      - "/admin/app"
+      - "/redirect_service/app"
+      - "/knowledge_store"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "npm"
+    directories:
+      - "/admin/app"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5

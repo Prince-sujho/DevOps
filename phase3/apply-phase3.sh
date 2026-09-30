@@ -52,8 +52,11 @@ Mutation + eval PR into \`main\` (${PHASE3_MUTATION_REPOS[*]}):
     python Eval-Suite/run.py  (live models, fake eval users; spend limits set at the provider)
   ${PHASE3_EVAL_SCRIPT}
   needs MUTATION_TRACKING_ISSUE, EVAL_TRACKING_ISSUE, GCP_WIF_SERVICE_ACCOUNT_EVAL, eval-* secrets
-  This job reports only. It does not stamp preprod-approved.
-  A Lead stamps one image via approve-preprod after testing on Pre-Prod.
+  Eval skips cleanly while GCP_WIF_PROVIDER is unset; once it is set, a broken
+  login, secret fetch or install fails the run (it does not hide).
+  This job reports only. It never deploys or blocks a deploy.
+  A Lead promotes to Prod via the phase2 workflow_dispatch form, gated on
+  the production GitHub Environment — not a tag this job sets.
 
 skip: ${PHASE3_SKIP_REPOS[*]}
   (mutation/eval need the umbrella tree, not a service checkout)
@@ -119,7 +122,8 @@ put_file "$REPO" "$PHASE3_EVAL_WORKFLOW" "${PHASE3_DIR}/workflows/eval-replay.ym
 put_file "$REPO" "$PHASE3_EVAL_SCRIPT" "${PHASE3_DIR}/scripts/eval_replay.py" \
   "$PHASE3_BRANCH" "Phase 3: eval replay wrapper around Eval-Suite/run.py."
 PR_BODY="Mutation via \`tests/ci/pipeline.py mutation\` (self-hosted)."
-PR_BODY+=" Eval via \`Eval-Suite/run.py\` (fake eval users, live models; spend limits live at the provider)."
+PR_BODY+=" Eval via \`Eval-Suite/run.py\` (fake eval users, live models;"
+PR_BODY+=" spend limits live at the provider)."
 PR_BODY+=" Reports only — never gates a deploy. Not a required check."
 PR_BODY+=" Do not check in transcripts."
 open_dev_pr "$REPO" "Phase 3: weekly mutation + Eval-Suite" "$PR_BODY"

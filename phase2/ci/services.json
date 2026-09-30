@@ -7,9 +7,15 @@
     "cpu": "1",
     "memory": "256Mi",
     "verify": "health",
-    "run_args": [
-      "--allow-unauthenticated"
-    ]
+    "runtime_sa": "redirect-run",
+    "secrets": [],
+    "env": [],
+    "run_args": [],
+    "overrides": {
+      "preprod": {
+        "min_instances": "0"
+      }
+    }
   },
   "text": {
     "dockerfile": "text_agent/app/Dockerfile",
@@ -19,9 +25,16 @@
     "cpu": "1",
     "memory": "1Gi",
     "verify": "health",
-    "run_args": [
-      "--allow-unauthenticated"
-    ]
+    "runtime_sa": "text-run",
+    "secrets": [],
+    "env": [],
+    "run_args": [],
+    "overrides": {
+      "preprod": {
+        "min_instances": "0",
+        "max_instances": "2"
+      }
+    }
   },
   "users": {
     "dockerfile": "user_service/app/Dockerfile",
@@ -31,12 +44,28 @@
     "cpu": "1",
     "memory": "512Mi",
     "verify": "health",
-    "run_args": [
-      "--allow-unauthenticated",
-      "--network=default",
-      "--subnet=default",
-      "--vpc-egress=all-traffic"
-    ]
+    "runtime_sa": "users-run",
+    "secrets": [],
+    "env": [],
+    "run_args": [],
+    "overrides": {
+      "preprod": {
+        "min_instances": "0",
+        "max_instances": "2",
+        "run_args": [
+          "--network=default",
+          "--subnet=default",
+          "--vpc-egress=all-traffic"
+        ]
+      },
+      "prod": {
+        "run_args": [
+          "--network=default",
+          "--subnet=default",
+          "--vpc-egress=all-traffic"
+        ]
+      }
+    }
   },
   "whatsapp": {
     "dockerfile": "whatsapp_adapter/app/Dockerfile",
@@ -46,10 +75,13 @@
     "cpu": "1",
     "memory": "512Mi",
     "verify": "health",
+    "runtime_sa": "whatsapp-run",
+    "secrets": [],
+    "env": [],
     "run_args": [
-      "--allow-unauthenticated",
       "--no-cpu-throttling"
-    ]
+    ],
+    "overrides": {}
   },
   "document-worker": {
     "dockerfile": "document_worker/Dockerfile",
@@ -59,10 +91,17 @@
     "cpu": "2",
     "memory": "4Gi",
     "verify": "health",
+    "runtime_sa": "document-worker-run",
+    "secrets": [],
+    "env": [],
     "run_args": [
-      "--allow-unauthenticated",
       "--concurrency=1"
-    ]
+    ],
+    "overrides": {
+      "preprod": {
+        "max_instances": "2"
+      }
+    }
   },
   "admin": {
     "dockerfile": "admin/app/Dockerfile",
@@ -73,10 +112,16 @@
     "memory": "256Mi",
     "verify": "revision",
     "pre_build_dir": "admin/app",
+    "runtime_sa": "admin-run",
+    "secrets": [],
+    "env": [],
     "run_args": [
-      "--no-allow-unauthenticated",
-      "--ingress=internal-and-cloud-load-balancing",
-      "--clear-secrets"
-    ]
+      "--ingress=internal-and-cloud-load-balancing"
+    ],
+    "overrides": {
+      "preprod": {
+        "min_instances": "0"
+      }
+    }
   }
 }

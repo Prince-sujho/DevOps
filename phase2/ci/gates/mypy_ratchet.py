@@ -1,16 +1,26 @@
 #!/usr/bin/env python3
-"""Fail if mypy error count went up vs whatever's currently deployed to
-Pre-Prod.
+"""Fail if HEAD has any mypy error not already present on whatever's
+currently deployed to Pre-Prod — a plain count comparison would let one
+error get fixed while a different one is introduced, since the total stays
+flat. Same baseline rule as Semgrep — the deployed commit, not a PR
+merge-base. --baseline-root is that commit already checked out as its own
+worktree (resolve-baseline builds it), so both runs cover the same tree.
 
-Same baseline rule as Semgrep — the deployed commit, not a PR merge-base.
---baseline-root is that commit already checked out as its own worktree
-(resolve-baseline builds it), so both counts cover the same tree.
+Signatures are counted, not just listed: a second identical error in the
+same file is a new error even though its text already exists. A mypy crash
+(exit 2+, e.g. a bad config or a missing install) is a failure, never "zero
+errors".
+
+--absolute is for a first deploy with no baseline at all: any mypy error
+fails, because there is nothing to ratchet against.
 
 Usage:
     mypy_ratchet.py --baseline-sha=SHA --baseline-root=/baseline [--root=.]
+    mypy_ratchet.py --absolute [--root=.]
 
-Exit codes: 0 error count did not increase, 1 it went up or the baseline
-worktree at --baseline-root doesn't exist.
+Exit codes: 0 no new error signatures vs the baseline (or none at all with
+--absolute), 1 there are new ones, mypy crashed, or the baseline worktree at
+--baseline-root doesn't exist.
 """
 
 from __future__ import annotations
@@ -19,27 +29,52 @@ import argparse
 import re
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
-ERROR_LINE = re.compile(r": error:")
+ERROR_LINE = re.compile(r"^(?P<file>[^:]+):\d+(?::\d+)?: error: (?P<rest>.*)$")
 
 
-def count_errors(cwd: Path) -> int:
-    """Run mypy over cwd and count its `: error:` lines.
+def parse_error_signatures(stdout: str) -> Counter[str]:
+    """Each error's (file, message) signature from raw mypy stdout, line
+    number dropped so an unrelated line shift elsewhere in the file doesn't
+    look like a new error. Repeats are kept: two identical errors count twice.
+
+    Args:
+        stdout: mypy's stdout text.
+    Returns:
+        How many times mypy reported each "file: message" signature.
+    Raises:
+        None.
+    """
+    signatures: Counter[str] = Counter()
+    for line in stdout.splitlines():
+        match = ERROR_LINE.match(line)
+        if match:
+            signatures[f"{match['file']}: {match['rest']}"] += 1
+    return signatures
+
+
+def error_signatures(cwd: Path) -> Counter[str]:
+    """Run mypy over cwd and return its error signatures.
 
     Args:
         cwd: directory to run mypy in.
     Returns:
-        How many output lines contain `: error:`.
+        How many times mypy reported each "file: message" signature.
     Raises:
-        None.
+        RuntimeError: mypy itself crashed (exit code 2 or more), so its
+            output can't be trusted as "no errors".
     """
     completed = subprocess.run(
-        ["mypy", "."], cwd=cwd, capture_output=True, text=True
+        ["mypy", "."], cwd=cwd, capture_output=True, text=True, check=False
     )
-    return sum(
-        1 for line in completed.stdout.splitlines() if ERROR_LINE.search(line)
-    )
+    if completed.returncode >= 2:
+        raise RuntimeError(
+            f"mypy crashed in {cwd} (exit {completed.returncode}): "
+            f"{completed.stderr.strip()[:500]}"
+        )
+    return parse_error_signatures(completed.stdout)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -48,15 +83,19 @@ def _parse_args() -> argparse.Namespace:
     Args:
         None.
     Returns:
-        The parsed namespace (baseline_sha/baseline_root/root).
+        The parsed namespace (baseline_sha/baseline_root/root/absolute).
     Raises:
-        SystemExit: a required argument is missing.
+        SystemExit: neither --absolute nor both baseline arguments given.
     """
     parser = argparse.ArgumentParser()
-    parser.add_argument("--baseline-sha", required=True)
-    parser.add_argument("--baseline-root", required=True)
+    parser.add_argument("--baseline-sha")
+    parser.add_argument("--baseline-root")
     parser.add_argument("--root", default=".")
-    return parser.parse_args()
+    parser.add_argument("--absolute", action="store_true")
+    args = parser.parse_args()
+    if not args.absolute and not (args.baseline_sha and args.baseline_root):
+        parser.error("--baseline-sha and --baseline-root, or --absolute")
+    return args
 
 
 def _missing_baseline(baseline_sha: str, baseline_root: Path) -> bool:
@@ -79,49 +118,77 @@ def _missing_baseline(baseline_sha: str, baseline_root: Path) -> bool:
     return True
 
 
-def _compare_counts(root: Path, baseline_root: Path, baseline_sha: str) -> int:
-    """Count mypy errors on head and baseline; fail if the head count rose.
+def _compare_signatures(
+    root: Path, baseline_root: Path, baseline_sha: str
+) -> int:
+    """Compare head and baseline error signatures; fail on any new one.
 
     Args:
         root: the head checkout to type-check.
         baseline_root: the deployed commit's checkout.
         baseline_sha: the baseline commit, printed in the messages.
     Returns:
-        0 when the head count did not rise, 1 when it did.
+        0 when head introduced no new error signature, 1 when it did.
     Raises:
         None.
     """
-    head_errors = count_errors(root)
-    print(f"head mypy errors: {head_errors}")
-    base_errors = count_errors(baseline_root)
-    print(f"baseline ({baseline_sha}) mypy errors: {base_errors}")
-    if head_errors > base_errors:
-        print(
-            f"::error::mypy errors went from {base_errors} to {head_errors}",
-            file=sys.stderr,
-        )
-        return 1
-    return 0
+    head_errors = error_signatures(root)
+    print(f"head mypy errors: {sum(head_errors.values())}")
+    base_errors = error_signatures(baseline_root)
+    print(f"baseline ({baseline_sha}) mypy errors: {sum(base_errors.values())}")
+    return _report_new(head_errors - base_errors, f"baseline {baseline_sha}")
+
+
+def _report_new(new_errors: Counter[str], against: str) -> int:
+    """Print every new error signature and pick the exit code.
+
+    Args:
+        new_errors: signatures (with counts) that head has and the
+            reference does not.
+        against: what head was compared with, named in the message.
+    Returns:
+        0 when there are none, 1 otherwise.
+    Raises:
+        None.
+    """
+    if not new_errors:
+        return 0
+    print(
+        f"::error::{sum(new_errors.values())} new mypy error(s) vs {against}:",
+        file=sys.stderr,
+    )
+    for signature, count in sorted(new_errors.items()):
+        print(f"::error::{signature} (x{count})", file=sys.stderr)
+    return 1
 
 
 def main() -> int:
-    """Entry point: compare HEAD's mypy error count against the baseline's.
+    """Entry point: fail if HEAD introduced any mypy error the baseline
+    didn't already have.
 
     Args:
         None.
     Returns:
-        0 when the head error count did not rise, 1 when the baseline checkout
-        is missing or the count rose.
+        0 when no new error signature appeared, 1 when the baseline checkout
+        is missing, mypy crashed, or a new signature appeared.
     Raises:
         None.
     """
     args = _parse_args()
     root = Path(args.root).resolve()
-    baseline_root = Path(args.baseline_root).resolve()
-    # never guess a baseline of 0
-    if _missing_baseline(args.baseline_sha, baseline_root):
+    try:
+        if args.absolute:
+            head_errors = error_signatures(root)
+            print(f"absolute mode, head mypy errors: {sum(head_errors.values())}")
+            return _report_new(head_errors, "an empty baseline (first deploy)")
+        baseline_root = Path(args.baseline_root).resolve()
+        # never guess a baseline of 0
+        if _missing_baseline(args.baseline_sha, baseline_root):
+            return 1
+        return _compare_signatures(root, baseline_root, args.baseline_sha)
+    except RuntimeError as exc:
+        print(f"::error::{exc}", file=sys.stderr)
         return 1
-    return _compare_counts(root, baseline_root, args.baseline_sha)
 
 
 if __name__ == "__main__":
