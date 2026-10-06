@@ -409,6 +409,41 @@ def nested_governance_paths(tree: Path, targets: list[str]) -> list[str]:
     return sorted(found)
 
 
+def _is_commit_sha(value: str) -> bool:
+    """True if value is a full 40-character lowercase commit SHA.
+
+    Args:
+        value: a branch name, or a commit SHA passed as the merge ref.
+    Returns:
+        True when value is 40 hex characters.
+    Raises:
+        None.
+    """
+    hex_digits = set("0123456789abcdef")
+    return len(value) == 40 and all(c in hex_digits for c in value)
+
+
+def _ref_to_merge(target: str, branch: str) -> str:
+    """The ref git merge should be given after fetch.
+
+    Fetch stores a branch as ``<remote>/<branch>``. It does not create
+    ``<remote>/<40-char-sha>``, and merging that name fails with
+    "not something we can merge". A pinned SHA is merged as itself;
+    the objects arrived with the branch fetch.
+
+    Args:
+        target: temporary remote name.
+        branch: branch name, or a post-rewrite commit SHA.
+    Returns:
+        ``branch`` when it is a full SHA, otherwise ``target/branch``.
+    Raises:
+        None.
+    """
+    if _is_commit_sha(branch):
+        return branch
+    return f"{target}/{branch}"
+
+
 def _merge_fetched(
     super_repo_dir: Path, target: str, branch: str
 ) -> None:
@@ -429,7 +464,7 @@ def _merge_fetched(
             "git",
             "merge",
             "--allow-unrelated-histories",
-            f"{target}/{branch}",
+            _ref_to_merge(target, branch),
             "-m",
             f"merge {target} into monorepo",
         ],

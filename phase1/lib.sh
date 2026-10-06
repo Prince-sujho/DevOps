@@ -127,14 +127,15 @@ print(base64.b64encode(p.read_bytes()).decode())
 
 codeowners_body_on_ref() {
   local repo="$1" ref="$2"
-  gh api "repos/${ORG}/${repo}/contents/${CODEOWNERS_DEST}?ref=${ref}" \
-    --jq .content 2>/dev/null \
-    | python3 -c '
+  local raw
+  raw="$(gh api "repos/${ORG}/${repo}/contents/${CODEOWNERS_DEST}?ref=${ref}" \
+    --jq .content 2>/dev/null)" || return 0
+  [ -n "$raw" ] || return 0
+  printf '%s' "$raw" | python3 -c '
 import sys, base64
 data = sys.stdin.read().replace("\n", "")
 print(base64.b64decode(data).decode() if data else "")
-' \
-    || true
+'
 }
 
 codeowners_ok_on_ref() {

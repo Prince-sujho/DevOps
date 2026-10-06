@@ -11,6 +11,7 @@ suite itself would fail loudly if that safety property were ever broken.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -22,6 +23,7 @@ from merge_repos import (
     drift_line,
     gitlink_sha,
     is_fully_rewritten,
+    merge_one,
     nested_governance_paths,
     same_source_tip,
 )
@@ -564,6 +566,70 @@ class TestCutoverChecklist(unittest.TestCase):
         lib = (HERE / "lib.sh").read_text()
         self.assertIn("--at-pinned) AT_PINNED=1", lib)
         self.assertIn("MERGE_ARGS+=(--at-pinned)", apply)
+
+
+class TestPinnedShaMerge(unittest.TestCase):
+    """--at-pinned merges a commit SHA, not remote/<sha>."""
+
+    def test_merges_the_pinned_commit_and_not_later_commits(self) -> None:
+        """A pinned SHA merges, and commits after that pin stay out.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            AssertionError: the pin is missing, or a later commit came in.
+        """
+        keys = (
+            "GIT_AUTHOR_NAME",
+            "GIT_AUTHOR_EMAIL",
+            "GIT_COMMITTER_NAME",
+            "GIT_COMMITTER_EMAIL",
+        )
+        saved = {key: os.environ.get(key) for key in keys}
+        os.environ.update({key: "t" for key in keys})
+        os.environ["GIT_AUTHOR_EMAIL"] = "t@example.com"
+        os.environ["GIT_COMMITTER_EMAIL"] = "t@example.com"
+        try:
+            self._merge_pin_not_tip()
+        finally:
+            for key, value in saved.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+    def _merge_pin_not_tip(self) -> None:
+        """Build two tiny repos and merge the child's first commit only.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            AssertionError: pinned.txt is missing, or later.txt came along.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            child, super_repo = root / "child", root / "super"
+            child.mkdir()
+            super_repo.mkdir()
+            _git(child, "init", "-q", "-b", "main")
+            (child / "pinned.txt").write_text("pin\n")
+            _git(child, "add", "pinned.txt")
+            _git(child, "commit", "-q", "-m", "pin")
+            pinned = _git(child, "rev-parse", "HEAD")
+            (child / "later.txt").write_text("later\n")
+            _git(child, "add", "later.txt")
+            _git(child, "commit", "-q", "-m", "later")
+            _git(super_repo, "init", "-q", "-b", "main")
+            (super_repo / "root.txt").write_text("root\n")
+            _git(super_repo, "add", "root.txt")
+            _git(super_repo, "commit", "-q", "-m", "root")
+            merge_one(super_repo, "user_service", child, at_commit=pinned)
+            self.assertTrue((super_repo / "pinned.txt").is_file())
+            self.assertFalse((super_repo / "later.txt").exists())
 
 
 if __name__ == "__main__":
