@@ -8,7 +8,7 @@ name: Rollback Cloud Run service (Prod)
 #
 # `environment: production-rollback` — a Lead must be the one who runs/approves
 # it, and GCP trusts only that OIDC subject for the prod rollback account
-# (repo:Sujho/sujho:environment:production-rollback). Unlike `production`,
+# (repo:Sujho/platform:environment:production-rollback). Unlike `production`,
 # self-review stays allowed there: in an incident the Lead who starts the
 # rollback can approve it alone, but it is still a named, logged Lead action
 # and nobody outside the reviewer list can do it.

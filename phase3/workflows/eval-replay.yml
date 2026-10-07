@@ -1,7 +1,7 @@
 name: Weekly eval replay
 
 # Drift detection against Eval-Suite (RespondService, fake users, real
-# OpenAI/Gemini/Neo4j), once a week on Sujho/sujho. Not a merge gate.
+# OpenAI/Gemini/Neo4j), once a week on Sujho/platform. Not a merge gate.
 # Not configured (GCP_WIF_PROVIDER unset) skips cleanly — the schedule must not
 # go red on a repo that never set this up. Once it IS configured, a broken
 # login, secret fetch or install fails the run: a drift detector that quietly

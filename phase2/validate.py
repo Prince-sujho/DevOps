@@ -2478,8 +2478,8 @@ class IamTableHardeningTests(unittest.TestCase):
             "roles/run.jobsExecutorWithOverrides",
             "roles/logging.viewer",
             "production-rollback",
-            "repo:Sujho/sujho:environment:production",
-            "repo:Sujho/sujho:ref:refs/heads/main",
+            "repo:Sujho/platform:environment:production",
+            "repo:Sujho/platform:ref:refs/heads/main",
         ):
             self.assertIn(needle, body)
 

@@ -79,6 +79,22 @@ check_kept_submodules_untouched() {
   done
 }
 
+# www and design_system are not merged and not kept. A pointer to either
+# one would still pull them in.
+check_left_out_repos() {
+  local path
+  for path in www design_system; do
+    if git -C "$OUTPUT" ls-tree HEAD -- "$path" | grep -q '^160000'; then
+      echo "FAIL: ${path} is still a gitlink in ${OUTPUT}"
+      fail=1
+    fi
+    if grep -q "\[submodule \"${path}\"\]" "${OUTPUT}/.gitmodules" 2>/dev/null; then
+      echo "FAIL: ${path} is still listed in ${OUTPUT}/.gitmodules"
+      fail=1
+    fi
+  done
+}
+
 check_ci_single_gitsource() {
   local f count
   for f in "${OUTPUT}"/ci/*.yaml; do
@@ -111,6 +127,8 @@ echo "--- gitlinks removed ---"
 check_no_dangling_gitlinks
 echo "--- kept submodules untouched ---"
 check_kept_submodules_untouched
+echo "--- www and design_system left out ---"
+check_left_out_repos
 echo "--- ci/*.yaml collapsed ---"
 check_ci_single_gitsource
 echo "--- pre-merge history preserved ---"

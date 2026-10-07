@@ -6,7 +6,7 @@ name: Deploy Cloud Run job (Pre-Prod)
 # Same shape as cloud-run-preprod-service.yaml: the exact commit is checked out
 # here (full history, no stored GitHub token) and uploaded to Cloud Build as
 # real source. GCP trusts this job by its OIDC subject,
-# repo:Sujho/sujho:ref:refs/heads/main.
+# repo:Sujho/platform:ref:refs/heads/main.
 
 on:
   workflow_dispatch:

@@ -2,7 +2,7 @@
 """Local invariants for Phase 0 (full repo merge) — no GitHub or GCP calls.
 
 Tests the pure logic in collapse_ci_gitsource.py against the exact real
-gitSource shapes found in Sujho/sujho's ci/*.yaml (3-source, 2-source, and
+gitSource shapes found in Sujho/platform's ci/*.yaml (3-source, 2-source, and
 0-source), checks repos.json's own internal consistency, and asserts that
 merge_repos.py's source contains no remote-mutating call at all — so this
 suite itself would fail loudly if that safety property were ever broken.
@@ -22,6 +22,7 @@ from merge_repos import (
     drift_count,
     drift_line,
     gitlink_sha,
+    gitlinks_not_kept,
     is_fully_rewritten,
     merge_one,
     nested_governance_paths,
@@ -232,8 +233,40 @@ class TestReposJson(unittest.TestCase):
         targets = [entry["target"] for entry in self.data["merge_repos"]]
         self.assertEqual(len(targets), len(set(targets)))
 
-    def test_eight_backend_repos_exactly(self) -> None:
-        """merge_repos lists exactly the 8 decided backend repos, no more.
+    def test_keep_submodules_is_empty(self) -> None:
+        """www and design_system stay out; docs is merged, not kept.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        self.assertEqual(self.data["keep_submodules"], [])
+
+    def test_empty_keep_list_drops_www_and_design_system(self) -> None:
+        """A gitlink stays only when keep_submodules names it.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        present = ["design_system", "docs", "www", "user_service"]
+        self.assertEqual(
+            gitlinks_not_kept(present, []),
+            present,
+        )
+        self.assertEqual(
+            gitlinks_not_kept(present, ["www"]),
+            ["design_system", "docs", "user_service"],
+        )
+
+    def test_merge_repos_are_the_decided_set(self) -> None:
+        """merge_repos is the 8 backends plus docs, and nothing else.
 
         Args:
             None.
@@ -254,6 +287,7 @@ class TestReposJson(unittest.TestCase):
                 "admin",
                 "redirect_service",
                 "infra",
+                "docs",
             },
         )
 

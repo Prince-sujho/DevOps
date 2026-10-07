@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Merge the 8 backend repos' full history into a local copy of Sujho/sujho.
+"""Merge the 8 backend repos' full history into a local copy of Sujho/platform.
 
 Local only, by construction: every git operation here reads (`clone`,
 `fetch` from a local path) or writes to `--output`, a path this script
@@ -306,6 +306,9 @@ def _remove_gitmodules_sections(
             cwd=super_repo_dir,
         )
     run(["git", "add", ".gitmodules"], cwd=super_repo_dir)
+    gitmodules = super_repo_dir / ".gitmodules"
+    if gitmodules.exists() and "[submodule " not in gitmodules.read_text():
+        run(["git", "rm", "-f", ".gitmodules"], cwd=super_repo_dir)
 
 
 def _unstage_gitlinks(super_repo_dir: Path, targets: list[str]) -> None:
@@ -324,6 +327,44 @@ def _unstage_gitlinks(super_repo_dir: Path, targets: list[str]) -> None:
         placeholder = super_repo_dir / target
         if placeholder.exists() and not any(placeholder.iterdir()):
             placeholder.rmdir()
+
+
+def gitlink_paths(super_repo_dir: Path) -> list[str]:
+    """Paths recorded as gitlinks (mode 160000) at the root of HEAD.
+
+    Args:
+        super_repo_dir: the super-repo's working copy, before they are dropped.
+    Returns:
+        Repo-relative paths, in git ls-tree order.
+    Raises:
+        subprocess.CalledProcessError: git ls-tree failed.
+    """
+    result = run(
+        ["git", "ls-tree", "HEAD"],
+        cwd=super_repo_dir,
+        capture_output=True,
+        text=True,
+    )
+    paths: list[str] = []
+    for line in result.stdout.splitlines():
+        if line.startswith("160000"):
+            paths.append(line.split("\t", 1)[1])
+    return paths
+
+
+def gitlinks_not_kept(present: list[str], keep: list[str]) -> list[str]:
+    """Gitlinks to drop: everything present that keep_submodules does not name.
+
+    Args:
+        present: gitlink paths currently in the super-repo.
+        keep: paths that must stay submodules. Empty means drop them all.
+    Returns:
+        The present paths that are not in keep, in the same order.
+    Raises:
+        None.
+    """
+    kept = set(keep)
+    return [path for path in present if path not in kept]
 
 
 def drop_gitlinks(super_repo_dir: Path, targets: list[str]) -> None:
@@ -609,7 +650,12 @@ def main(argv: list[str] | None = None) -> int:
         drift_line(target, drift_count(rewritten[target], pinned[target]))
         for target in rewritten
     ]
-    drop_gitlinks(args.output, list(rewritten))
+    drop_gitlinks(
+        args.output,
+        gitlinks_not_kept(
+            gitlink_paths(args.output), data["keep_submodules"]
+        ),
+    )
     for target, repo_dir in rewritten.items():
         print(f"=== merging {target} ===")
         merge_one(

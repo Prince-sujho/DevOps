@@ -5,13 +5,13 @@
 # Exit codes: none of its own — die() and its error conventions come from
 #   phase1/lib.sh, which must already be sourced.
 
-PHASE2_REPO="sujho"
+PHASE2_REPO="platform"
 PHASE2_BRANCH="chore/phase2-promotion"
 PHASE2_PILOT="redirect"
 PHASE2_SKIP_PREREQ=0
 PHASE2_ALL=0
 
-# Every file this phase puts on Sujho/sujho, dest path -> local source path.
+# Every file this phase puts on Sujho/platform, dest path -> local source path.
 # No generators: these are the actual files, committed as-is.
 PHASE2_FILE_MAP=(
   "ci/services.json:${BASH_SOURCE%/*}/ci/services.json"

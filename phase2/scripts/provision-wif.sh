@@ -4,9 +4,9 @@
 #
 # Each GitHub-side account trusts exactly ONE OIDC subject, never "any
 # workflow in the repo":
-#   preprod deploy/rollback, eval  repo:Sujho/sujho:ref:refs/heads/main
-#   prod deploy                    repo:Sujho/sujho:environment:production
-#   prod rollback                  repo:Sujho/sujho:environment:production-rollback
+#   preprod deploy/rollback, eval  repo:Sujho/platform:ref:refs/heads/main
+#   prod deploy                    repo:Sujho/platform:environment:production
+#   prod rollback                  repo:Sujho/platform:environment:production-rollback
 # A job only gets an environment:* subject after that GitHub Environment's
 # approval, so a workflow on another branch (or one that skips the
 # `environment:` line) cannot impersonate a prod account.
@@ -28,7 +28,7 @@ WIF_PROJECT="${WIF_PROJECT:-sujho-478914}"
 PROD_PROJECT="sujho-478914"
 PREPROD_PROJECT="sujho-preprod"
 GITHUB_ORG="Sujho"
-GITHUB_REPO="sujho"
+GITHUB_REPO="platform"
 GITHUB_OWNER_ID="${GITHUB_OWNER_ID:-REPLACE_WITH_GITHUB_ORG_NUMERIC_ID}"
 POOL_ID="github-pool"
 PROVIDER_ID="github-provider"
@@ -180,7 +180,7 @@ bind_subject github-eval "$PREPROD_PROJECT" "$SUBJECT_MAIN"
 echo
 echo "identities created, no roles granted — work through IAM-table.md next"
 echo
-echo "then set GitHub Variables by hand on ${GITHUB_ORG}/sujho (never Secrets):"
+echo "then set GitHub Variables by hand on ${GITHUB_ORG}/${GITHUB_REPO} (never Secrets):"
 echo "  GCP_WIF_PROVIDER=$(provider_resource "$WIF_NUMBER")"
 echo "  GCP_WIF_SERVICE_ACCOUNT_PREPROD=$(sa_email github-deploy-preprod "$PREPROD_PROJECT")"
 rollback_preprod_email="$(sa_email github-rollback-preprod "$PREPROD_PROJECT")"

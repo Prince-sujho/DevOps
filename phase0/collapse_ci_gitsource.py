@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Collapse a Cloud Build deploy YAML's multi-repo `dependencies:` to one.
 
-Every real `ci/*-deploy.yaml` in Sujho/sujho lists 1-3 `gitSource` blocks
+Every real `ci/*-deploy.yaml` in Sujho/platform lists 1-3 `gitSource` blocks
 under `dependencies:` — always the super-repo itself (`destPath: .`), and
 for service builds also that service's repo and `infra`, each pinned to
 `revision: main` (which floats past whatever SHA the super-repo's gitlink

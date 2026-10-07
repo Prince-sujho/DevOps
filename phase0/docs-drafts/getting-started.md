@@ -14,7 +14,7 @@ How to go from zero to a running local dev environment.
 ## Clone
 
 ```bash
-git clone https://github.com/Sujho/sujho.git
+git clone https://github.com/Sujho/platform.git
 cd sujho
 ```
 

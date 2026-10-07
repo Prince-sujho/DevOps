@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Promotion pipeline files — build/deploy recipes, service config, rollback,
-# IAM table. Lands on Sujho/sujho via PR; nothing here deploys by itself.
+# IAM table. Lands on Sujho/platform via PR; nothing here deploys by itself.
 #
 # Usage: see usage() below — ./apply-phase2.sh [--apply]
 # Arguments: --apply — actually open the PR on GitHub (default: dry-run/plan only).
@@ -14,7 +14,7 @@
 usage() {
   cat <<'EOF'
   ./apply-phase2.sh              # validate locally, plan the sujho PR (dry-run)
-  ./apply-phase2.sh --apply      # open the PR onto Sujho/sujho for real
+  ./apply-phase2.sh --apply      # open the PR onto Sujho/platform for real
 
 This phase never touches sujho-dev, sujho-preprod, or sujho-478914 directly —
 it only writes files to GitHub. The GCP-side setup (creating projects, IAM

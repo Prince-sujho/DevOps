@@ -5,7 +5,7 @@ Plan only. Nothing applied. Scripts stay dry-run until `--apply`.
 phase0 first, then phase1 and phase2. phase3 stays off.
 
 1. The engineer tries the feature in `sujho-dev`. No CI.
-2. Pull request on `Sujho/sujho`. A Lead approves. Nothing runs on the pull request. Merge does not deploy.
+2. Pull request on `Sujho/platform`. A Lead approves. Nothing runs on the pull request. Merge does not deploy.
 3. Someone runs Pre-Prod from `main`, then tries it on the Pre-Prod phone.
 4. Someone runs Prod with that full SHA. A Lead approves. Same image, no rebuild.
 5. Rollback moves traffic to the previous revision. No rebuild.
@@ -33,7 +33,7 @@ Nothing is applied.
 
 - `sujho-preprod` does not exist. IAM is not granted. The `production` and `production-rollback` Environments do not exist.
 - Pre-Prod has no data, secrets, or test WhatsApp number. A deploy proves `/health`.
-- `tests/`, `Eval-Suite`, and `pyproject.toml` are not in `Sujho/sujho`. Phase 3 stays off.
+- `tests/`, `Eval-Suite`, and `pyproject.toml` are not in `Sujho/platform`. Phase 3 stays off.
 - `verify-phase1.sh` and `verify-phase2.sh --remote` are manual. `sujho-ops-mcp` gets the merge gate only.
 
 ## Known gaps — Arnav's approval

@@ -3,7 +3,7 @@ name: Deploy Cloud Run job (Prod)
 # Manual only. Deploys the exact image already verified on Pre-Prod, never
 # rebuilds. Same environment: production gate as cloud-run-prod-service.yaml,
 # and GCP trusts only that Environment's OIDC subject
-# (repo:Sujho/sujho:environment:production). Nothing authenticates to GCP
+# (repo:Sujho/platform:environment:production). Nothing authenticates to GCP
 # before approval; the "tested image exists" check runs inside Cloud Build
 # (job-deploy-only.yaml's resolve-digest).
 

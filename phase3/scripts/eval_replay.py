@@ -156,7 +156,7 @@ def handle_missing_prereqs() -> bool:
         write_result(
             skipped=True,
             reason="Eval-Suite/run.py missing — this job belongs on "
-            "Sujho/sujho",
+            "Sujho/platform",
         )
         return True
     return False

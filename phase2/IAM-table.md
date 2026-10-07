@@ -39,9 +39,9 @@ exactly one subject, so GCP itself refuses a job that isn't the intended one:
 
 | Account | Only this GitHub job can use it |
 |---|---|
-| `github-deploy-preprod`, `github-rollback-preprod`, `github-eval` | `repo:Sujho/sujho:ref:refs/heads/main` (workflows dispatched on `main`) |
-| `github-deploy-prod` | `repo:Sujho/sujho:environment:production` — only exists once a Lead has approved |
-| `github-rollback-prod` | `repo:Sujho/sujho:environment:production-rollback` |
+| `github-deploy-preprod`, `github-rollback-preprod`, `github-eval` | `repo:Sujho/platform:ref:refs/heads/main` (workflows dispatched on `main`) |
+| `github-deploy-prod` | `repo:Sujho/platform:environment:production` — only exists once a Lead has approved |
+| `github-rollback-prod` | `repo:Sujho/platform:environment:production-rollback` |
 
 A workflow on any other branch, or one that drops the `environment:` line,
 gets a different subject and GCP rejects it. The Lead approval is therefore
@@ -195,7 +195,7 @@ exact Environment names.
 
 | Step | Where |
 |---|---|
-| Create an Environment named `production` | `Sujho/sujho` → Settings → Environments |
+| Create an Environment named `production` | `Sujho/platform` → Settings → Environments |
 | Add required reviewers | List the Leads. Anyone not listed cannot approve a paused run. |
 | Turn on "Prevent self-review" | Same screen. Stops the person who started the run from approving it. |
 | Deployment branches | "Selected branches" → `main` only. |

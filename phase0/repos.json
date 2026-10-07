@@ -1,6 +1,6 @@
 {
   "super_repo": "sujho",
-  "keep_submodules": ["www", "design_system", "docs"],
+  "keep_submodules": [],
   "merge_repos": [
     {"github": "user-service", "target": "user_service"},
     {"github": "whatsapp-adapter", "target": "whatsapp_adapter"},
@@ -9,7 +9,8 @@
     {"github": "knowledge-store", "target": "knowledge_store"},
     {"github": "admin", "target": "admin"},
     {"github": "redirect-service", "target": "redirect_service"},
-    {"github": "infra", "target": "infra"}
+    {"github": "infra", "target": "infra"},
+    {"github": "docs", "target": "docs"}
   ],
   "ci_dir": "ci"
 }

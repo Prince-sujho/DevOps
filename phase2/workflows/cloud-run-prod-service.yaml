@@ -6,7 +6,7 @@ name: Deploy Cloud Run service (Prod)
 # can't approve their own run (phase2/verify-phase2.sh --remote checks it).
 #
 # GCP trusts only this job's OIDC subject,
-# repo:Sujho/sujho:environment:production (see
+# repo:Sujho/platform:environment:production (see
 # phase2/scripts/provision-wif.sh). That subject exists only after the
 # Environment's approval, so a workflow on some other branch cannot
 # impersonate the prod deploy account and skip the approval.
