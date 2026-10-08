@@ -30,6 +30,7 @@ on:
           - whatsapp
           - document-worker
           - admin
+          - probe
       commit:
         description: >-
           Full 40-character git commit to deploy — the one verified on

@@ -25,6 +25,7 @@ on:
           - whatsapp
           - document-worker
           - admin
+          - probe
       commit:
         description: Git commit to deploy (empty = tip of main)
         required: false

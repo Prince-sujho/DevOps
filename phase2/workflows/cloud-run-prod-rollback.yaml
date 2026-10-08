@@ -28,6 +28,7 @@ on:
           - whatsapp
           - document-worker
           - admin
+          - probe
       revision:
         description: Cloud Run revision name (empty = previous serving)
         required: false

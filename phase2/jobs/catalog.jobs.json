@@ -2,6 +2,17 @@
   "registry": "asia-south1-docker.pkg.dev/sujho-preprod/services",
   "region": "asia-south1",
   "image_groups": {
+    "probe": {
+      "image": "probe",
+      "dockerfile": "probe/Dockerfile",
+      "runtime_sa": "jobs-run",
+      "cpu": "1",
+      "memory": "256Mi",
+      "task_timeout": "300s",
+      "tasks": 1,
+      "parallelism": 1,
+      "max_retries": 0
+    },
     "knowledge-store": {
       "image": "knowledge-store-jobs",
       "dockerfile": "knowledge_store/Dockerfile",
@@ -36,6 +47,10 @@
     {
       "id": "knowledge-store-import-educart",
       "memory": "2Gi"
+    },
+    {
+      "id": "probe-job",
+      "schedule": "0 * * * *"
     }
   ]
 }

@@ -19,6 +19,8 @@ substitutions:
   _REGISTRY: "asia-south1-docker.pkg.dev/sujho-preprod/services"
   _REGION: "asia-south1"
 
+serviceAccount: projects/sujho-478914/serviceAccounts/prod-builder@sujho-478914.iam.gserviceaccount.com
+
 options:
   logging: CLOUD_LOGGING_ONLY
 

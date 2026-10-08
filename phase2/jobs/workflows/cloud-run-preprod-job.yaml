@@ -22,6 +22,7 @@ on:
           - knowledge-store-remove
           - knowledge-store-import-ncert
           - knowledge-store-import-educart
+          - probe-job
       commit:
         description: Git commit to deploy (empty = tip of main)
         required: false

@@ -92,7 +92,8 @@ class CatalogTests(unittest.TestCase):
             self.assertEqual(data["JOB_ID"], job["id"])
 
     def test_sessions_is_hourly_and_others_are_run_by_hand(self) -> None:
-        """Only the sessions job has a schedule; the rest are run by hand.
+        """sessions and the probe job are scheduled; the rest are run
+        by hand.
 
         Args:
             None.
@@ -105,6 +106,7 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(
             by_id["knowledge-store-sessions"].get("schedule"), "0 * * * *"
         )
+        self.assertEqual(by_id["probe-job"].get("schedule"), "0 * * * *")
         for job_id in (
             "knowledge-store-ingest",
             "knowledge-store-remove",

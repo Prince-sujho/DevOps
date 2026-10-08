@@ -21,6 +21,7 @@ on:
           - knowledge-store-remove
           - knowledge-store-import-ncert
           - knowledge-store-import-educart
+          - probe-job
       commit:
         description: >-
           Full 40-character git commit to deploy — the one verified on

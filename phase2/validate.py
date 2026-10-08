@@ -111,8 +111,9 @@ class ServicesJsonTests(unittest.TestCase):
         """
         iam_table = read(HERE / "IAM-table.md")
         for service_id, cfg in self.services.items():
-            self.assertEqual(cfg.get("runtime_sa"), f"{service_id}-run")
-            self.assertIn(f"`{service_id}-run@<project>`", iam_table)
+            expected = "jobs-run" if service_id == "probe" else f"{service_id}-run"
+            self.assertEqual(cfg.get("runtime_sa"), expected)
+            self.assertIn(f"`{expected}`", iam_table)
 
     def test_no_service_config_can_break_the_substitutions_string(
         self,
@@ -229,8 +230,8 @@ class ServicesJsonTests(unittest.TestCase):
 
     def test_admin_is_the_one_revision_verified_service(self) -> None:
         # admin is IAP-only, the one legitimate exception to the HTTP check
-        """Only admin uses revision-verify; every other service uses HTTP
-        health.
+        """admin and the throwaway probe use revision-verify; other
+        services use HTTP health.
 
         Args:
             None.
@@ -241,9 +242,9 @@ class ServicesJsonTests(unittest.TestCase):
         """
         for service_id, cfg in self.services.items():
             if cfg["verify"] == "revision":
-                self.assertEqual(
+                self.assertIn(
                     service_id,
-                    "admin",
+                    {"admin", "probe"},
                     f"unexpected revision-verify on {service_id}",
                 )
 
@@ -1828,8 +1829,7 @@ class IamTableTests(unittest.TestCase):
         self.assertIn("prod-builder", body)
 
     def test_mentions_the_production_environment(self) -> None:
-        """IAM-table.md documents the production environment's self-review
-        prevention.
+        """IAM-table.md documents that a Lead must start a production run.
 
         Args:
             None.
@@ -1840,7 +1840,8 @@ class IamTableTests(unittest.TestCase):
         """
         body = read(HERE / "IAM-table.md")
         self.assertIn("production", body)
-        self.assertIn("Prevent self-review", body)
+        self.assertIn("started by a Lead", body)
+        self.assertIn("no required reviewers", body)
 
 
 JOBS_WORKFLOWS = HERE / "jobs" / "workflows"

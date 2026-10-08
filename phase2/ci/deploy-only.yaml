@@ -33,6 +33,8 @@ substitutions:
   _SHORT_SHA: ""
   _REGION: "asia-south1"
 
+serviceAccount: projects/sujho-478914/serviceAccounts/prod-builder@sujho-478914.iam.gserviceaccount.com
+
 options:
   logging: CLOUD_LOGGING_ONLY
 

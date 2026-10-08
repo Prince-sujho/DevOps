@@ -18,6 +18,8 @@ phase2: Pre-Prod builds, Prod promotes the same image. Gates: ruff, mypy, semgre
 
 phase3: weekly mutation and eval reports. Off until configured. Do not run `Eval-Suite/run.py` here.
 
+Python 3.12+. `phase0/collapse_ci_gitsource.py` and `phase3/validate.py` do not run on 3.9.
+
 ```bash
 pip install -e ./infra -r tests/requirements.txt
 pytest tests/unit tests/api

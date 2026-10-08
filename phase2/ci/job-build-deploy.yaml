@@ -31,6 +31,8 @@ substitutions:
   # the deployed job (resolve_baseline.py)
   _BASELINE_SHA: ""
 
+serviceAccount: projects/sujho-preprod/serviceAccounts/prod-builder@sujho-preprod.iam.gserviceaccount.com
+
 options:
   logging: CLOUD_LOGGING_ONLY
 
