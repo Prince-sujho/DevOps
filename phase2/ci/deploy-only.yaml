@@ -16,8 +16,8 @@ substitutions:
   # extra gcloud run deploy flags from services.json run_args. Never a flag
   # that decides who may call the service: those set the service's IAM
   # policy, which needs run.admin, and the builder only has run.developer.
-  # Public access is a one-time Lead decision (IAM-table.md 3d), not
-  # something a deploy re-decides on every release.
+  # Public access is a one-time Lead decision made outside the
+  # pipeline, not something a deploy re-decides on every release.
   _RUN_ARGS: ""
   # runtime identity the container acts as; the deploy refuses without one, so
   # nothing ever silently runs as the project's default compute account
@@ -74,7 +74,7 @@ steps:
         fi
         # --update-*, never --set-*/--clear-*: an incomplete list in
         # services.json must not strip config the service already has.
-        ENV_ARG="RELEASE_COMMIT_SHA=${_COMMIT_SHA},RELEASE_IMAGE_DIGEST=$${DIGEST}"
+        ENV_ARG="RELEASE_COMMIT_SHA=${_COMMIT_SHA},RELEASE_IMAGE_DIGEST=$${DIGEST},GOOGLE_CLOUD_PROJECT=${_TARGET_PROJECT},GOOGLE_CLOUD_LOCATION=${_REGION}"
         EXTRA_ENV="$(printf '%s' "${_ENV_VARS}" | tr ';' ',')"
         if [ -n "$$EXTRA_ENV" ]; then
           ENV_ARG="$${ENV_ARG},$${EXTRA_ENV}"

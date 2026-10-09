@@ -11,18 +11,16 @@ from __future__ import annotations
 
 import pytest
 
-from infra.conversation import ContentMessage, PendingAction
+from infra.conversation import ContentMessage, HeldConversation
 from infra.firestore.repos.onboarding import OnboardingRepository
 
 from .helpers import (
     blocklist_exists,
-    enrollment_ids,
     gifting_docs,
     onboarding_exists,
     referrer_doc,
     session_ids,
     student_profile,
-    teacher_profile,
     transcript_rows,
     user_doc,
     user_message,
@@ -56,7 +54,7 @@ async def _enroll_ambassador(api, phone: str, name: str) -> tuple[str, str]:
 
 
 async def _populated_ambassador(api, db, phone: str) -> tuple[str, str]:
-    """Enroll an ambassador who also has a teacher link, a block, and a row.
+    """Enroll an ambassador who also has a block and a row.
 
     Args:
         api: HTTP client for user_service's internal surface.
@@ -68,14 +66,6 @@ async def _populated_ambassador(api, db, phone: str) -> tuple[str, str]:
         AssertionError: enrollment or the seed append did not succeed.
     """
     user_id, handle = await _enroll_ambassador(api, phone, "Priya")
-    teacher = await api.create_user(
-        teacher_profile("910000050101", name="Teacher")
-    )
-    enroll = await api.post(
-        "/internal/enrollments",
-        json={"teacherUserId": teacher["userId"], "studentUserId": user_id},
-    )
-    assert enroll.status_code == 204
     await api.put(f"/internal/blocklist/{user_id}")
     appended = await api.append(
         user_id, [user_message("hello", BASE_MS, turn_id="t1")]
@@ -109,7 +99,6 @@ async def _assert_deleted_keeps_block(
     assert await session_ids(db, user_id) == []
     assert await transcript_rows(db, user_id) == []
     assert await gifting_docs(db, user_id) == []
-    assert await enrollment_ids(db) == []
     # The blocklist is keyed by phone identity, not owned by the profile:
     # deleting the profile must not let a blocked phone re-onboard unblocked.
     assert await blocklist_exists(db, user_id) is True
@@ -221,8 +210,7 @@ async def test_delete_does_not_remove_adapter_owned_onboarding(api, db):
         student_profile("910000050004", name="Keep")
     )
     user_id = profile["userId"]
-    pending = PendingAction(
-        action="select_persona",
+    pending = HeldConversation(
         messages=[
             ContentMessage(
                 type="text",

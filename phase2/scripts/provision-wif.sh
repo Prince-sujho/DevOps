@@ -7,9 +7,11 @@
 #   preprod deploy/rollback, eval  repo:Sujho/platform:ref:refs/heads/main
 #   prod deploy                    repo:Sujho/platform:environment:production
 #   prod rollback                  repo:Sujho/platform:environment:production-rollback
-# A job only gets an environment:* subject after that GitHub Environment's
-# approval, so a workflow on another branch (or one that skips the
-# `environment:` line) cannot impersonate a prod account.
+# A job only gets an environment:* subject when it declares that GitHub
+# Environment (limited to `main`), so a workflow on another branch (or one that
+# skips the `environment:` line) cannot impersonate a prod account. The
+# "started by a Lead" rule is a separate condition on the pool (see
+# IAM-table.md); this script does not set it.
 # The pool lives in the PROD project, not Pre-Prod. Whoever can administer the
 # host project can edit the pool, its provider condition and its bindings — so
 # hosting it in Pre-Prod would have let anyone with Pre-Prod admin mint tokens
@@ -150,7 +152,7 @@ run gcloud iam service-accounts create github-rollback-prod \
 run gcloud iam service-accounts create github-eval \
   --project="$PREPROD_PROJECT" --display-name="github-eval"
 
-# the narrow key the build machine itself runs as — see IAM-table.md section 2
+# the narrow key the build machine itself runs as — see IAM-table.md
 run gcloud iam service-accounts create prod-builder \
   --project="$PREPROD_PROJECT" --display-name="prod-builder (writes the warehouse)"
 run gcloud iam service-accounts create prod-builder \

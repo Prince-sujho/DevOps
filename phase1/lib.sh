@@ -10,7 +10,7 @@
 # Assumes phase0's merge already landed: text-agent, user-service,
 # whatsapp-adapter, admin, document-worker, redirect-service,
 # knowledge-store, and infra no longer exist as separate repos — they're
-# folders inside sujho, already covered by sujho's own CODEOWNERS/ruleset.
+# folders inside platform, already covered by platform's own CODEOWNERS/ruleset.
 # Like phase2, this is a design not yet applied to the real repos.
 set -euo pipefail
 
@@ -20,13 +20,12 @@ LEADS=(arnavtayal abhishektayal2802)
 NOT_LEAD="Prince-sujho"
 
 FULL_TREATMENT_REPOS=(
-  sujho
+  platform
   sujho-ops-mcp
 )
 
 LIGHT_TOUCH_REPOS=(
   design-system
-  docs
   hiring
   www
 )

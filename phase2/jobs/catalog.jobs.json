@@ -5,6 +5,8 @@
     "probe": {
       "image": "probe",
       "dockerfile": "probe/Dockerfile",
+      "entry_module": "probe.jobs.job",
+      "entry_file": "probe/jobs/job.py",
       "runtime_sa": "jobs-run",
       "cpu": "1",
       "memory": "256Mi",
@@ -16,6 +18,8 @@
     "knowledge-store": {
       "image": "knowledge-store-jobs",
       "dockerfile": "knowledge_store/Dockerfile",
+      "entry_module": "knowledge_store.run",
+      "entry_file": "knowledge_store/run.py",
       "runtime_sa": "knowledge-store-run",
       "cpu": "2",
       "task_timeout": "24h",
@@ -27,30 +31,48 @@
   "jobs": [
     {
       "id": "knowledge-store-ingest",
+      "group": "knowledge-store",
+      "args": ["ingest"],
       "memory": "4Gi",
       "needs_entry_id": true
     },
     {
       "id": "knowledge-store-remove",
+      "group": "knowledge-store",
+      "args": ["remove"],
       "memory": "2Gi",
       "needs_entry_id": true
     },
     {
       "id": "knowledge-store-sessions",
+      "group": "knowledge-store",
+      "args": ["sessions"],
       "memory": "2Gi",
       "schedule": "0 * * * *"
     },
     {
       "id": "knowledge-store-import-ncert",
+      "group": "knowledge-store",
+      "args": ["import-ncert"],
       "memory": "2Gi"
     },
     {
       "id": "knowledge-store-import-educart",
+      "group": "knowledge-store",
+      "args": ["import-educart"],
       "memory": "2Gi"
     },
     {
       "id": "probe-job",
-      "schedule": "0 * * * *"
+      "group": "probe",
+      "args": [],
+      "schedule": "0 * * * *",
+      "env": [],
+      "overrides": {
+        "prod": {
+          "env": ["PROBE_CHECKS=on"]
+        }
+      }
     }
   ]
 }

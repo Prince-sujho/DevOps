@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import threading
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 import httpx
 
@@ -33,13 +33,13 @@ class HubbleHttpDouble:
         """
         self._lock = threading.Lock()
         self.products: dict[str, dict[str, Any]] = {}
-        self.orders: dict[str, Optional[dict[str, Any]]] = {}
+        self.orders: dict[str, dict[str, Any] | None] = {}
         # When set, POST /orders stores this body under the request's
         # referenceId
         # (and optionally then raises TimeoutException, simulating a lost
         # response
         # after Hubble accepted the mint).
-        self.place_order_body: Optional[dict[str, Any]] = None
+        self.place_order_body: dict[str, Any] | None = None
         self.place_order_mode: PlaceOrderMode = "respond"
         self.place_order_calls: list[dict[str, Any]] = []
         self.get_order_calls: list[str] = []
@@ -79,7 +79,7 @@ class HubbleHttpDouble:
             self.products = dict(products)
 
     def set_order(
-        self, reference_id: str, body: Optional[dict[str, Any]]
+        self, reference_id: str, body: dict[str, Any] | None
     ) -> None:
         """``None`` means GET by-reference returns 404.
 

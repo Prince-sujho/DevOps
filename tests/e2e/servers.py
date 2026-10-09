@@ -15,7 +15,6 @@ import time
 from contextlib import asynccontextmanager
 from functools import partial
 from dataclasses import dataclass
-from typing import Optional
 
 import httpx
 import uvicorn
@@ -28,7 +27,6 @@ from infra.firestore import UsageRepository
 from infra.firestore.repos.blocklist import BlocklistRepository
 from infra.firestore.repos.campaigns import CampaignsRepository
 from infra.firestore.repos.clicks import ClicksRepository
-from infra.firestore.repos.enrollments import EnrollmentsRepository
 from infra.firestore.repos.gifting import GiftingRepository
 from infra.firestore.repos.message_claims import MessageClaimsRepository
 from infra.firestore.repos.onboarding import OnboardingRepository
@@ -258,7 +256,6 @@ async def _user_service_lifespan(app, fakes: Fakes):
         db=db,
         settings=settings,
         users=users,
-        enrollments=EnrollmentsRepository(db),
         threads=ThreadsRepository(db),
         referrers=ReferrersRepository(db),
         clicks=ClicksRepository(db),
@@ -394,16 +391,16 @@ def _adapter_flow_settings():
 
     return FlowSettings(
         ids=FlowIds(
+            onboarding=K.ONBOARDING_FLOW_ID,
             student=PersonaFlowIds(
-                onboarding=K.STUDENT_ONBOARDING_FLOW_ID,
                 doc=K.STUDENT_DOC_FLOW_ID,
                 grade=K.STUDENT_GRADE_FLOW_ID,
             ),
             teacher=PersonaFlowIds(
-                onboarding=K.TEACHER_ONBOARDING_FLOW_ID,
                 doc=K.TEACHER_DOC_FLOW_ID,
                 grade=K.TEACHER_GRADE_FLOW_ID,
             ),
+            roster=K.ROSTER_FLOW_ID,
         ),
         private_key_pem="-----BEGIN TEST KEY-----\nunused\n-----END TEST "
         "KEY-----",
@@ -547,7 +544,7 @@ def _build_adapter_runner(
     from whatsapp_adapter.app.src.service import AgentInputBuilder, ReplyRunner
 
     whatsapp = fakes.whatsapp
-    flows = FlowLauncher(whatsapp, settings.flows.ids)
+    flows = FlowLauncher(whatsapp, users, settings.flows.ids)
     inputs = AgentInputBuilder(
         fakes.adapter_bucket,
         MediaFetcher(whatsapp, openai_runtime),
@@ -586,7 +583,9 @@ def _build_adapter_turn_loop(
     Raises:
         None.
     """
+    from whatsapp_adapter.app.src.output import TemplatePack
     from whatsapp_adapter.app.src.service import (
+        DigestDelivery,
         OnboardingCoordinator,
         TurnGate,
         TurnLoop,
@@ -601,16 +600,18 @@ def _build_adapter_turn_loop(
         whatsapp=whatsapp,
         flows=flows,
         inputs=inputs,
-        pending=pending,
+        held=pending,
     )
     gate = TurnGate(
         users=users,
         whatsapp=whatsapp,
         inputs=inputs,
         onboarding=onboarding,
-        pending=pending,
     )
-    return TurnLoop(gate.process, runner), confirmations
+    # The real app also runs digests.run() as a background consumer; the
+    # harness leaves it unstarted so no out-of-turn template is ever sent.
+    digests = DigestDelivery(users, whatsapp, TemplatePack.load())
+    return TurnLoop(gate.process, runner, digests), confirmations
 
 
 @asynccontextmanager
@@ -645,6 +646,7 @@ async def _adapter_lifespan(
             public_exponent=65537, key_size=2048
         ),
         whatsapp=fakes.whatsapp,
+        users=users,
         message_claims=MessageClaimsRepository(db),
         turns=turns,
         confirmations=confirmations,

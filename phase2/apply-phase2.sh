@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Promotion pipeline files — build/deploy recipes, service config, rollback,
-# IAM table. Lands on Sujho/platform via PR; nothing here deploys by itself.
+# jobs, Firestore rules deploy, and the test gates. Lands on Sujho/platform via
+# PR; nothing here deploys by itself. (IAM-table.md stays in DevOps-Plan.)
 #
 # Usage: see usage() below — ./apply-phase2.sh [--apply]
 # Arguments: --apply — actually open the PR on GitHub (default: dry-run/plan only).
@@ -13,12 +14,12 @@
 
 usage() {
   cat <<'EOF'
-  ./apply-phase2.sh              # validate locally, plan the sujho PR (dry-run)
+  ./apply-phase2.sh              # validate locally, plan the platform PR (dry-run)
   ./apply-phase2.sh --apply      # open the PR onto Sujho/platform for real
 
 This phase never touches sujho-dev, sujho-preprod, or sujho-478914 directly —
-it only writes files to GitHub. The GCP-side setup (creating projects, IAM
-grants, the production Environment) is IAM-table.md, followed by hand.
+it only writes files to GitHub. The GCP-side setup (projects, IAM grants, GitHub
+sign-in) is already in place; IAM-table.md records what was granted.
 EOF
 }
 
@@ -81,10 +82,11 @@ n="$(
 if [ -n "$n" ]; then
   echo "${PHASE2_REPO}: Phase 2 PR already open (#${n}) — a Lead must merge it"
 else
-  PR_BODY="One build recipe, one deploy-only recipe, one services.json."
-  PR_BODY+=" Prod deploy pauses on the production Environment instead of a"
-  PR_BODY+=" separate approve step. Warehouse lives in sujho-preprod,"
-  PR_BODY+=" sujho-dev untouched. GCP-side setup: IAM-table.md, by hand."
+  PR_BODY="One build recipe, one deploy-only recipe, one services.json, plus"
+  PR_BODY+=" the jobs, Firestore and test-gate files. There is no approval step"
+  PR_BODY+=" on a Prod deploy: Google only accepts a production run that a Lead"
+  PR_BODY+=" started. Warehouse lives in sujho-preprod, sujho-dev untouched."
+  PR_BODY+=" Permissions as granted: IAM-table.md in DevOps-Plan."
   gh pr create --repo "${ORG}/${PHASE2_REPO}" --base main --head "$PHASE2_BRANCH" \
     --title "Phase 2: promotion pipeline (Pre-Prod -> Prod, no auto-deploy)" \
     --body "$PR_BODY"

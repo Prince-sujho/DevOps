@@ -34,6 +34,7 @@ ALL_RECIPES = (
     "deploy-only.yaml",
     "job-build-deploy.yaml",
     "job-deploy-only.yaml",
+    "firestore-deploy.yaml",
 )
 FORBIDDEN_PROJECT_REFS = ['"sujho-dev"', "=sujho-dev", ": sujho-dev"]
 
@@ -100,7 +101,7 @@ class ServicesJsonTests(unittest.TestCase):
         # A missing one means the container runs as the project's default
         # compute account, which can read every bucket and secret in it.
         """Every service names a `<service>-run` runtime account, matching the
-        per-service accounts in IAM-table.md section 3.
+        runtime accounts listed in IAM-table.md.
 
         Args:
             None.
@@ -625,9 +626,35 @@ class CloudBuildRecipeTests(unittest.TestCase):
             self.assertIn('_BASELINE_SHA: ""', body, name)
             self.assertIn('BASE_SHA="${_BASELINE_SHA}"', body, name)
             self.assertIn("mypy_ratchet.py --absolute", body, name)
+            self.assertIn("ruff_ratchet.py --absolute", body, name)
             self.assertIn("semgrep scan --config=p/ci --error\n", body, name)
             # the old silent "baseline = HEAD" fallback must never come back
             self.assertNotIn('BASE_SHA="${_COMMIT_SHA}"', body, name)
+
+    def test_ruff_ratchet_wired_the_same_way_as_mypy(self) -> None:
+        """Gate 1 runs ruff_ratchet.py with the same baseline/absolute
+        branching as mypy_ratchet.py, and a bare unratcheted `ruff check .`
+        is gone — old findings no longer block every future deploy.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        for name in ("build-deploy.yaml", "job-build-deploy.yaml"):
+            body = read(CI / name)
+            self.assertNotIn("ruff check .\n", body, name)
+            self.assertIn(
+                'ci/gates/ruff_ratchet.py \\\n            --baseline-sha "$$BASE_SHA" --baseline-root /baseline',
+                body,
+                name,
+            )
+            # both ratchets read the same baseline worktree gate-1 built
+            self.assertLess(
+                body.index("ruff_ratchet.py"), body.index("mypy_ratchet.py"), name
+            )
 
     def test_bash_variables_are_escaped_for_cloud_build(self) -> None:
         # Cloud Build scans the whole args string for $NAME: a bare $URI,
@@ -849,7 +876,7 @@ class WorkflowTests(unittest.TestCase):
                 f"{name} needs full history for the ancestor check",
             )
 
-    def test_prod_service_form_has_the_approval_gate(self) -> None:
+    def test_prod_service_form_uses_the_production_environment(self) -> None:
         """Prod's form requires the production environment and an independent
         validate job.
 
@@ -1648,6 +1675,235 @@ class MypyRatchetTests(unittest.TestCase):
         self.assertFalse(head - baseline)
 
 
+class RuffRatchetTests(unittest.TestCase):
+    def setUp(self) -> None:
+        """Load the file this test class checks, fresh for every test.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        import importlib.util
+
+        path = CI / "gates" / "ruff_ratchet.py"
+        spec = importlib.util.spec_from_file_location("ruff_ratchet", path)
+        self.mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.mod)
+
+    @staticmethod
+    def _finding(filename: str, code: str, message: str, row: int = 1) -> dict:
+        """One ruff --output-format=json finding, shaped like the real thing.
+
+        Args:
+            filename: absolute path, as ruff's JSON always reports it.
+            code: the rule code (e.g. "E501").
+            message: the finding's message text.
+            row: line number — must be ignored by the signature, not read.
+        Returns:
+            The finding dict.
+        Raises:
+            None.
+        """
+        return {
+            "filename": filename,
+            "code": code,
+            "message": message,
+            "location": {"row": row, "column": 1},
+        }
+
+    def test_signature_drops_line_number_keeps_message(self) -> None:
+        """Two findings at different lines with the same code and message
+        share one signature (counted twice) — a line shift elsewhere in the
+        file isn't a new finding, but a second copy of one is.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        import json
+
+        stdout = json.dumps(
+            [
+                self._finding("/root/a/b.py", "E501", "Line too long", row=10),
+                self._finding("/root/a/b.py", "E501", "Line too long", row=40),
+            ]
+        )
+        self.assertEqual(
+            dict(self.mod.parse_finding_signatures(stdout, Path("/root"))),
+            {"a/b.py: E501 Line too long": 2},
+        )
+
+    def test_absolute_filename_is_made_relative_to_cwd(self) -> None:
+        # ruff's JSON "filename" is always absolute, resolved against cwd,
+        # unlike mypy's text output which stays relative to its own cwd on
+        # its own. Without relativizing, the same file linted from two
+        # different checkouts (head vs. the baseline worktree) would never
+        # match, and every finding would look new every single time.
+        """The same file under two different absolute roots produces an
+        identical signature once each is made relative to its own root.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        import json
+
+        head_stdout = json.dumps(
+            [self._finding("/workspace/infra/utils/ids.py", "E501", "Line too long")]
+        )
+        baseline_stdout = json.dumps(
+            [self._finding("/baseline/infra/utils/ids.py", "E501", "Line too long")]
+        )
+        head = self.mod.parse_finding_signatures(head_stdout, Path("/workspace"))
+        baseline = self.mod.parse_finding_signatures(
+            baseline_stdout, Path("/baseline")
+        )
+        self.assertEqual(dict(head), dict(baseline))
+        self.assertFalse(head - baseline)
+
+    def test_a_second_copy_of_an_existing_finding_is_new(self) -> None:
+        """Adding a duplicate of a baseline finding is caught, not hidden by
+        a set's de-duplication.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        import json
+
+        one = json.dumps(
+            [self._finding("/root/a/b.py", "E501", "Line too long", row=10)]
+        )
+        two = json.dumps(
+            [
+                self._finding("/root/a/b.py", "E501", "Line too long", row=10),
+                self._finding("/root/a/b.py", "E501", "Line too long", row=50),
+            ]
+        )
+        baseline = self.mod.parse_finding_signatures(one, Path("/root"))
+        head = self.mod.parse_finding_signatures(two, Path("/root"))
+        self.assertEqual(sum((head - baseline).values()), 1)
+
+    def test_absolute_mode_needs_no_baseline_arguments(self) -> None:
+        """--absolute is accepted alone; without it both baseline arguments
+        are required.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        import contextlib
+        import io
+        import sys
+
+        argv = sys.argv
+        try:
+            sys.argv = ["ruff_ratchet.py", "--absolute"]
+            self.assertTrue(self.mod._parse_args().absolute)
+            sys.argv = ["ruff_ratchet.py"]
+            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(
+                SystemExit
+            ):
+                self.mod._parse_args()
+        finally:
+            sys.argv = argv
+
+    def test_a_ruff_crash_is_a_failure_not_zero_findings(self) -> None:
+        """ruff exiting 2 or more raises instead of reading as no findings.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        import subprocess
+        from unittest import mock
+
+        crashed = subprocess.CompletedProcess([], 2, "", "config error")
+        with mock.patch.object(
+            self.mod.subprocess, "run", return_value=crashed
+        ), self.assertRaises(RuntimeError):
+            self.mod.finding_signatures(Path("."))
+
+    def test_non_json_stdout_is_a_failure_not_zero_findings(self) -> None:
+        """A ruff exit 0/1 that somehow isn't valid JSON still raises, rather
+        than silently reading as no findings.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        with self.assertRaises(RuntimeError):
+            self.mod.parse_finding_signatures("not json at all", Path("."))
+
+    def test_swapping_one_finding_for_a_different_one_is_not_silent(
+        self,
+    ) -> None:
+        # This is the exact gap a count-only ratchet has: fix one finding,
+        # introduce a different one, the total count never moves.
+        """Fixing one finding while introducing a different one is a new
+        signature, not a wash.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        import json
+
+        baseline = self.mod.parse_finding_signatures(
+            json.dumps([self._finding("/root/a/b.py", "F401", "unused import")]),
+            Path("/root"),
+        )
+        head = self.mod.parse_finding_signatures(
+            json.dumps([self._finding("/root/a/c.py", "E501", "Line too long")]),
+            Path("/root"),
+        )
+        self.assertEqual(len(baseline), len(head))
+        self.assertTrue(head - baseline)
+
+    def test_identical_finding_set_has_nothing_new(self) -> None:
+        """The same findings on both sides introduce nothing new.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        import json
+
+        stdout = json.dumps(
+            [self._finding("/root/a/b.py", "F401", "unused import")]
+        )
+        baseline = self.mod.parse_finding_signatures(stdout, Path("/root"))
+        head = self.mod.parse_finding_signatures(stdout, Path("/root"))
+        self.assertFalse(head - baseline)
+
+
 class CleanupPolicyTests(unittest.TestCase):
     def test_no_cleanup_policy_file_or_wiring_remains(self) -> None:
         """Dropped on purpose: no rule protected the image Prod is currently
@@ -1956,7 +2212,7 @@ class WorkflowHardeningTests(unittest.TestCase):
         self,
     ) -> None:
         """Prod takes only a full 40-character SHA, and nothing authenticates
-        to GCP before the production Environment approves.
+        to GCP before the production Environment job starts.
 
         Args:
             None.
@@ -1968,11 +2224,11 @@ class WorkflowHardeningTests(unittest.TestCase):
         for path in PROD_SOURCE_UPLOADERS:
             text = read(path)
             self.assertIn("[0-9a-f]{40}", text, path.name)
-            before_approval = text.split("environment: production")[0]
+            before_environment = text.split("environment: production")[0]
             self.assertNotIn(
-                "google-github-actions/auth", before_approval, path.name
+                "google-github-actions/auth", before_environment, path.name
             )
-            self.assertNotIn("artifacts docker images", before_approval)
+            self.assertNotIn("artifacts docker images", before_environment)
 
     def test_preprod_workflows_normalise_the_commit(self) -> None:
         """Pre-Prod validates a typed commit's shape and resolves it to the
@@ -2494,6 +2750,333 @@ class IamTableHardeningTests(unittest.TestCase):
         ]
         self.assertNotIn("phase2/IAM-table.md", active)
         self.assertNotIn("IAM-table.md:", read(HERE / "lib.sh"))
+
+
+class FirestoreDeployTests(unittest.TestCase):
+    def test_recipe_has_no_trigger_guard_or_gitsource(self) -> None:
+        """The new recipe drops the old trigger-guard step and gitSource
+        dependencies the live deploy-firestore-gcr trigger used — the
+        workflow uploads the tree as real source instead, like every other
+        recipe here.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        body = read(CI / "firestore-deploy.yaml")
+        for needle in (
+            "trigger-guard",
+            "gitSource:",
+            "developerConnect",
+            "_EXPECTED_TRIGGER_NAME",
+        ):
+            self.assertNotIn(needle, body, f"firestore-deploy.yaml still has {needle!r}")
+
+    def test_recipe_runs_as_prod_builder_not_the_default_account(self) -> None:
+        """serviceAccount resolves to prod-builder in whichever project the
+        build runs in, never the default compute account.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        body = read(CI / "firestore-deploy.yaml")
+        self.assertIn(
+            "serviceAccount: projects/${PROJECT_ID}/serviceAccounts/"
+            "prod-builder@${PROJECT_ID}.iam.gserviceaccount.com",
+            body,
+        )
+
+    def test_recipe_logs_to_cloud_logging_only(self) -> None:
+        """Same logging option every other recipe here uses.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        self.assertIn("logging: CLOUD_LOGGING_ONLY", read(CI / "firestore-deploy.yaml"))
+
+    def test_recipe_builds_then_deploys_in_order(self) -> None:
+        """The config-build step runs before the firebase-tools deploy step.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        body = read(CI / "firestore-deploy.yaml")
+        self.assertIn("infra.firestore.build firebase-build", body)
+        self.assertIn("firebase-tools deploy", body)
+        self.assertLess(
+            body.index("id: build-firestore-config"),
+            body.index("id: deploy-firestore"),
+        )
+        self.assertIn('waitFor: ["build-firestore-config"]', body)
+
+    def test_recipe_has_no_image_and_nothing_to_promote(self) -> None:
+        """This recipe is config-only: no Kaniko build, no registry tag.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        body = read(CI / "firestore-deploy.yaml")
+        self.assertNotIn("kaniko", body)
+        self.assertNotIn("candidate-", body)
+        self.assertNotIn("sha-", body)
+
+    def test_both_firestore_workflows_check_ancestor_of_main(self) -> None:
+        """Both firestore deploy forms verify the commit is an ancestor of
+        main, same bug-4 fix every other deploy form has.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        for name in ("firestore-preprod.yaml", "firestore-prod.yaml"):
+            body = read(WORKFLOWS / name)
+            self.assertIn("merge-base --is-ancestor", body, name)
+            self.assertIn("fetch-depth: 0", body, name)
+
+    def test_only_prod_firestore_workflow_uses_the_production_environment(self) -> None:
+        """Only the Prod form runs in the production Environment; Pre-Prod
+        does not.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        self.assertIn(
+            "environment: production", read(WORKFLOWS / "firestore-prod.yaml")
+        )
+        self.assertNotIn(
+            "environment: production", read(WORKFLOWS / "firestore-preprod.yaml")
+        )
+
+    def test_prod_firestore_commit_input_is_required(self) -> None:
+        """Prod's commit input is required; Pre-Prod's is intentionally
+        optional (blank = tip of main).
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        prod = read(WORKFLOWS / "firestore-prod.yaml")
+        commit_input = prod.split("commit:")[1]
+        self.assertIn("required: true", commit_input)
+        preprod = read(WORKFLOWS / "firestore-preprod.yaml")
+        self.assertIn('default: ""', preprod)
+
+    def test_both_firestore_workflows_submit_real_source(self) -> None:
+        """Neither firestore workflow uses --no-source; both upload the
+        checked-out commit, like every other recipe here.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        for name in ("firestore-preprod.yaml", "firestore-prod.yaml"):
+            body = read(WORKFLOWS / name)
+            self.assertNotIn("--no-source", body, name)
+            self.assertIn("gcloud builds submit .", body, name)
+            self.assertIn("--config=ci/firestore-deploy.yaml", body, name)
+
+    def test_firestore_workflows_have_their_own_concurrency_group(self) -> None:
+        """Firestore deploys serialize independently of service/job deploys.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        preprod = read(WORKFLOWS / "firestore-preprod.yaml")
+        prod = read(WORKFLOWS / "firestore-prod.yaml")
+        self.assertIn("group: firestore-sujho-preprod", preprod)
+        self.assertIn("group: firestore-sujho-478914", prod)
+        for body in (preprod, prod):
+            self.assertIn("cancel-in-progress: false", body)
+
+    def test_firestore_files_are_in_the_push_list(self) -> None:
+        """All three new files are wired into lib.sh's push list, same as
+        every other recipe/workflow pair.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        lib = read(HERE / "lib.sh")
+        self.assertIn("ci/firestore-deploy.yaml:", lib)
+        self.assertIn(".github/workflows/firestore-preprod.yaml:", lib)
+        self.assertIn(".github/workflows/firestore-prod.yaml:", lib)
+
+
+def file_map() -> dict[str, Path]:
+    """lib.sh's PHASE2_FILE_MAP, expanded by bash: destination -> local source.
+
+    Reading the real array, not grepping lib.sh's text, is what keeps the
+    multi-line entries (a trailing backslash joins the destination and source
+    lines) from being skipped.
+
+    Args:
+        None.
+    Returns:
+        Each destination path in the push list mapped to its resolved source.
+    Raises:
+        subprocess.CalledProcessError: bash could not source lib.sh.
+    """
+    script = (
+        'cd "$1"; source ../phase1/lib.sh >/dev/null 2>&1; source ./lib.sh; '
+        'for e in "${PHASE2_FILE_MAP[@]}"; do printf "%s\\n" "$e"; done'
+    )
+    out = subprocess.run(
+        ["bash", "-c", script, "_", str(HERE)],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    mapping: dict[str, Path] = {}
+    for line in out.splitlines():
+        dest, source = line.split(":", 1)
+        mapping[dest] = (HERE / source).resolve()
+    return mapping
+
+
+class FileMapCompletenessTests(unittest.TestCase):
+    """The push list ships everything the shipped recipes run, and no more."""
+
+    # A repo-relative path to a file a recipe or workflow runs or reads.
+    REPO_PATH = re.compile(
+        r"(?<![\w/.${}-])((?:ci|scripts|jobs|tests|probe)/[\w./-]+"
+        r"\.(?:py|sh|json|yaml|ini|baseline|txt))"
+    )
+
+    def test_every_source_exists_and_every_destination_is_unique(self) -> None:
+        """Each map entry's local source is a real file, and no destination
+        is listed twice.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        out = subprocess.run(
+            [
+                "bash",
+                "-c",
+                'cd "$1"; source ../phase1/lib.sh >/dev/null 2>&1; '
+                'source ./lib.sh; printf "%s\\n" "${PHASE2_FILE_MAP[@]}"',
+                "_",
+                str(HERE),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.splitlines()
+        dests = [line.split(":", 1)[0] for line in out]
+        self.assertEqual(len(dests), len(set(dests)))
+        mapping = file_map()
+        self.assertGreater(len(mapping), 80)
+        for dest, source in mapping.items():
+            self.assertTrue(source.is_file(), f"{dest} <- {source}")
+
+    def test_every_repo_file_the_recipes_and_workflows_use_is_shipped(
+        self,
+    ) -> None:
+        # build-deploy.yaml ran ci/gates/ruff_ratchet.py for a while without
+        # it being in the push list: the first real Pre-Prod deploy would have
+        # failed at gate 1 with "can't open file".
+        """Every ci/, scripts/, jobs/, tests/ or probe/ file named in a
+        shipped recipe, workflow or script is a destination in the push list.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        dests = set(file_map())
+        scanned = [
+            *CI.glob("*.yaml"),
+            *WORKFLOWS.glob("*.yaml"),
+            *(HERE / "jobs" / "workflows").glob("*.yaml"),
+            *SCRIPTS.glob("rollback-cloudrun.sh"),
+            *SCRIPTS.glob("pick_rollback_revision.py"),
+            *(HERE / "jobs" / "scripts").glob("*.py"),
+            *(CI / "gates").glob("*.py"),
+        ]
+        self.assertGreater(len(scanned), 15)
+        missing: list[str] = []
+        for path in scanned:
+            for line in read(path).splitlines():
+                for ref in self.REPO_PATH.findall(line):
+                    if ref not in dests:
+                        missing.append(f"{path.name}: {ref}")
+        self.assertEqual(missing, [])
+
+    def test_every_gate_script_and_test_file_on_disk_is_shipped(self) -> None:
+        # The other direction: a file added under tests/ or ci/gates/ that
+        # nobody put in the push list never reaches Sujho/platform, so the
+        # gate that counts it (check_test_count) or runs it does not see it.
+        """Every file under phase2/ci/gates/ and tests/ (bar caches and the
+        untracked notes) is a source in the push list.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        sources = set(file_map().values())
+        roots = [CI / "gates", HERE.parent / "tests"]
+        unmapped: list[str] = []
+        for root in roots:
+            for path in sorted(root.rglob("*")):
+                if not path.is_file():
+                    continue
+                if "__pycache__" in path.parts or path.suffix == ".pyc":
+                    continue
+                if path.name == "README.md" or path.suffix == ".md":
+                    continue  # untracked notes (see .gitignore)
+                if path.name in {".DS_Store"} or ".pytest_cache" in path.parts:
+                    continue
+                if path.resolve() not in sources:
+                    unmapped.append(str(path.relative_to(HERE.parent)))
+        self.assertEqual(unmapped, [])
 
 
 if __name__ == "__main__":

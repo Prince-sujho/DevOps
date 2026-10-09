@@ -562,7 +562,7 @@ class TestCutoverChecklist(unittest.TestCase):
             "tags and GitHub Releases",
             "Scan the merged history for secrets",
             "Cloud Build",
-            "Archive the 8 old repos — do not delete",
+            "Archive the 9 old repos — do not delete",
             "drift report",
             "--at-pinned",
             "CODEOWNERS",

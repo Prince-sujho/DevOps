@@ -7,9 +7,6 @@
 
 PHASE2_REPO="platform"
 PHASE2_BRANCH="chore/phase2-promotion"
-PHASE2_PILOT="redirect"
-PHASE2_SKIP_PREREQ=0
-PHASE2_ALL=0
 
 # Every file this phase puts on Sujho/platform, dest path -> local source path.
 # No generators: these are the actual files, committed as-is.
@@ -19,9 +16,11 @@ PHASE2_FILE_MAP=(
   "ci/deploy-only.yaml:${BASH_SOURCE%/*}/ci/deploy-only.yaml"
   "ci/gates/verify_revision.py:${BASH_SOURCE%/*}/ci/gates/verify_revision.py"
   "ci/gates/mypy_ratchet.py:${BASH_SOURCE%/*}/ci/gates/mypy_ratchet.py"
+  "ci/gates/ruff_ratchet.py:${BASH_SOURCE%/*}/ci/gates/ruff_ratchet.py"
   "ci/gates/resolve_baseline.py:${BASH_SOURCE%/*}/ci/gates/resolve_baseline.py"
   "ci/job-build-deploy.yaml:${BASH_SOURCE%/*}/ci/job-build-deploy.yaml"
   "ci/job-deploy-only.yaml:${BASH_SOURCE%/*}/ci/job-deploy-only.yaml"
+  "ci/firestore-deploy.yaml:${BASH_SOURCE%/*}/ci/firestore-deploy.yaml"
   "scripts/rollback-cloudrun.sh:${BASH_SOURCE%/*}/scripts/rollback-cloudrun.sh"
   "scripts/pick_rollback_revision.py:${BASH_SOURCE%/*}/scripts/pick_rollback_revision.py"
   ".github/workflows/cloud-run-preprod-service.yaml:\
@@ -33,11 +32,123 @@ ${BASH_SOURCE%/*}/workflows/cloud-run-preprod-rollback.yaml"
   ".github/workflows/cloud-run-prod-rollback.yaml:\
 ${BASH_SOURCE%/*}/workflows/cloud-run-prod-rollback.yaml"
   "jobs/catalog.jobs.json:${BASH_SOURCE%/*}/jobs/catalog.jobs.json"
+  "probe/Dockerfile:${BASH_SOURCE%/*}/../probe/Dockerfile"
+  "probe/jobs/__init__.py:${BASH_SOURCE%/*}/../probe/jobs/__init__.py"
+  "probe/jobs/job.py:${BASH_SOURCE%/*}/../probe/jobs/job.py"
   "jobs/scripts/lookup_job.py:${BASH_SOURCE%/*}/jobs/scripts/lookup_job.py"
   ".github/workflows/cloud-run-preprod-job.yaml:\
 ${BASH_SOURCE%/*}/jobs/workflows/cloud-run-preprod-job.yaml"
   ".github/workflows/cloud-run-prod-job.yaml:\
 ${BASH_SOURCE%/*}/jobs/workflows/cloud-run-prod-job.yaml"
+  ".github/workflows/firestore-preprod.yaml:\
+${BASH_SOURCE%/*}/workflows/firestore-preprod.yaml"
+  ".github/workflows/firestore-prod.yaml:\
+${BASH_SOURCE%/*}/workflows/firestore-prod.yaml"
   ".github/PULL_REQUEST_TEMPLATE.md:${BASH_SOURCE%/*}/../.github/PULL_REQUEST_TEMPLATE.md"
   ".github/dependabot.yml:${BASH_SOURCE%/*}/../.github/dependabot.yml"
+
+  # tests/ (the kept suite) and pyproject.toml (the ruff/mypy settings the
+  # gates read) — without these, every Pre-Prod deploy fails at the gates.
+  "pyproject.toml:${BASH_SOURCE%/*}/../pyproject.toml"
+  "tests/.gitignore:${BASH_SOURCE%/*}/../tests/.gitignore"
+  "tests/__init__.py:${BASH_SOURCE%/*}/../tests/__init__.py"
+  "tests/requirements.txt:${BASH_SOURCE%/*}/../tests/requirements.txt"
+  "tests/tooling/check_assertions.py:\
+${BASH_SOURCE%/*}/../tests/tooling/check_assertions.py"
+  "tests/tooling/check_test_count.py:\
+${BASH_SOURCE%/*}/../tests/tooling/check_test_count.py"
+  "tests/outcomes/pytest/collected.json:\
+${BASH_SOURCE%/*}/../tests/outcomes/pytest/collected.json"
+  "tests/ci/.secrets.baseline:${BASH_SOURCE%/*}/../tests/ci/.secrets.baseline"
+  "tests/ci/__init__.py:${BASH_SOURCE%/*}/../tests/ci/__init__.py"
+  "tests/ci/paths.py:${BASH_SOURCE%/*}/../tests/ci/paths.py"
+  "tests/ci/pipeline.py:${BASH_SOURCE%/*}/../tests/ci/pipeline.py"
+  "tests/unit/__init__.py:${BASH_SOURCE%/*}/../tests/unit/__init__.py"
+  "tests/unit/conftest.py:${BASH_SOURCE%/*}/../tests/unit/conftest.py"
+  "tests/unit/pytest.ini:${BASH_SOURCE%/*}/../tests/unit/pytest.ini"
+  "tests/unit/infra/__init__.py:\
+${BASH_SOURCE%/*}/../tests/unit/infra/__init__.py"
+  "tests/unit/infra/test_leases.py:\
+${BASH_SOURCE%/*}/../tests/unit/infra/test_leases.py"
+  "tests/unit/whatsapp_adapter/__init__.py:\
+${BASH_SOURCE%/*}/../tests/unit/whatsapp_adapter/__init__.py"
+  "tests/unit/whatsapp_adapter/test_flow_crypto.py:\
+${BASH_SOURCE%/*}/../tests/unit/whatsapp_adapter/test_flow_crypto.py"
+  "tests/api/__init__.py:${BASH_SOURCE%/*}/../tests/api/__init__.py"
+  "tests/api/auth_routes.py:${BASH_SOURCE%/*}/../tests/api/auth_routes.py"
+  "tests/api/user_service/__init__.py:\
+${BASH_SOURCE%/*}/../tests/api/user_service/__init__.py"
+  "tests/api/user_service/conftest.py:\
+${BASH_SOURCE%/*}/../tests/api/user_service/conftest.py"
+  "tests/api/user_service/test_auth_boundary.py:\
+${BASH_SOURCE%/*}/../tests/api/user_service/test_auth_boundary.py"
+  "tests/api/whatsapp_adapter/__init__.py:\
+${BASH_SOURCE%/*}/../tests/api/whatsapp_adapter/__init__.py"
+  "tests/api/whatsapp_adapter/conftest.py:\
+${BASH_SOURCE%/*}/../tests/api/whatsapp_adapter/conftest.py"
+  "tests/api/whatsapp_adapter/payloads.py:\
+${BASH_SOURCE%/*}/../tests/api/whatsapp_adapter/payloads.py"
+  "tests/api/whatsapp_adapter/test_webhook_signature.py:\
+${BASH_SOURCE%/*}/../tests/api/whatsapp_adapter/test_webhook_signature.py"
+  "tests/integration/__init__.py:\
+${BASH_SOURCE%/*}/../tests/integration/__init__.py"
+  "tests/integration/conftest.py:\
+${BASH_SOURCE%/*}/../tests/integration/conftest.py"
+  "tests/integration/constants.py:\
+${BASH_SOURCE%/*}/../tests/integration/constants.py"
+  "tests/integration/fakes.py:${BASH_SOURCE%/*}/../tests/integration/fakes.py"
+  "tests/integration/helpers.py:\
+${BASH_SOURCE%/*}/../tests/integration/helpers.py"
+  "tests/integration/hubble_http.py:\
+${BASH_SOURCE%/*}/../tests/integration/hubble_http.py"
+  "tests/integration/pytest.ini:\
+${BASH_SOURCE%/*}/../tests/integration/pytest.ini"
+  "tests/integration/test_cascade.py:\
+${BASH_SOURCE%/*}/../tests/integration/test_cascade.py"
+  "tests/integration/test_cross_service_contract.py:\
+${BASH_SOURCE%/*}/../tests/integration/test_cross_service_contract.py"
+  "tests/integration/test_derive_on_read.py:\
+${BASH_SOURCE%/*}/../tests/integration/test_derive_on_read.py"
+  "tests/integration/test_hubble_settlement.py:\
+${BASH_SOURCE%/*}/../tests/integration/test_hubble_settlement.py"
+  "tests/integration/test_idempotency.py:\
+${BASH_SOURCE%/*}/../tests/integration/test_idempotency.py"
+  "tests/integration/test_identity.py:\
+${BASH_SOURCE%/*}/../tests/integration/test_identity.py"
+  "tests/integration/test_sequences.py:\
+${BASH_SOURCE%/*}/../tests/integration/test_sequences.py"
+  "tests/integration/test_session_boundary.py:\
+${BASH_SOURCE%/*}/../tests/integration/test_session_boundary.py"
+  "tests/integration/test_transactions.py:\
+${BASH_SOURCE%/*}/../tests/integration/test_transactions.py"
+  "tests/e2e/__init__.py:${BASH_SOURCE%/*}/../tests/e2e/__init__.py"
+  "tests/e2e/conftest.py:${BASH_SOURCE%/*}/../tests/e2e/conftest.py"
+  "tests/e2e/constants.py:${BASH_SOURCE%/*}/../tests/e2e/constants.py"
+  "tests/e2e/fakes.py:${BASH_SOURCE%/*}/../tests/e2e/fakes.py"
+  "tests/e2e/payloads.py:${BASH_SOURCE%/*}/../tests/e2e/payloads.py"
+  "tests/e2e/scripting.py:${BASH_SOURCE%/*}/../tests/e2e/scripting.py"
+  "tests/e2e/servers.py:${BASH_SOURCE%/*}/../tests/e2e/servers.py"
+  "tests/e2e/test_idempotency.py:\
+${BASH_SOURCE%/*}/../tests/e2e/test_idempotency.py"
+  "tests/e2e/test_webhook_signature.py:\
+${BASH_SOURCE%/*}/../tests/e2e/test_webhook_signature.py"
+  # Docker-only suite, not run by any gate (README) — still part of tests/.
+  "tests/knowledge_store/__init__.py:\
+${BASH_SOURCE%/*}/../tests/knowledge_store/__init__.py"
+  "tests/knowledge_store/conftest.py:\
+${BASH_SOURCE%/*}/../tests/knowledge_store/conftest.py"
+  "tests/knowledge_store/fakes.py:\
+${BASH_SOURCE%/*}/../tests/knowledge_store/fakes.py"
+  "tests/knowledge_store/pytest.ini:\
+${BASH_SOURCE%/*}/../tests/knowledge_store/pytest.ini"
+  "tests/knowledge_store/requirements-test.txt:\
+${BASH_SOURCE%/*}/../tests/knowledge_store/requirements-test.txt"
+  "tests/knowledge_store/test_entry_delete_preserves_concepts.py:\
+${BASH_SOURCE%/*}/../tests/knowledge_store/test_entry_delete_preserves_concepts.py"
+  "tests/knowledge_store/test_materialize_replace.py:\
+${BASH_SOURCE%/*}/../tests/knowledge_store/test_materialize_replace.py"
+  "tests/knowledge_store/test_orphan_concepts.py:\
+${BASH_SOURCE%/*}/../tests/knowledge_store/test_orphan_concepts.py"
+  "tests/knowledge_store/test_session_judgment.py:\
+${BASH_SOURCE%/*}/../tests/knowledge_store/test_session_judgment.py"
 )

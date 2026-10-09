@@ -6,6 +6,8 @@ substitutions:
   _IMAGE: ""
   _RUNTIME_SA: ""
   _ENTRY_MODULE: ""
+  # ';'-separated container args after the module (the verb). Empty for probe.
+  _ENTRY_ARGS: ""
   _CPU: "1"
   _MEMORY: "512Mi"
   _TASK_TIMEOUT: "3600s"
@@ -18,6 +20,8 @@ substitutions:
   _TARGET_PROJECT: "sujho-478914"
   _REGISTRY: "asia-south1-docker.pkg.dev/sujho-preprod/services"
   _REGION: "asia-south1"
+  # ';'-separated, converted to ',' below, same as services.json's env
+  _ENV_VARS: ""
 
 serviceAccount: projects/sujho-478914/serviceAccounts/prod-builder@sujho-478914.iam.gserviceaccount.com
 
@@ -50,14 +54,24 @@ steps:
       - |
         set -euo pipefail
         DIGEST="$(cat /workspace/.digest)"
+        ENV_ARG="RELEASE_COMMIT_SHA=${_COMMIT_SHA},GOOGLE_CLOUD_PROJECT=${_TARGET_PROJECT},GOOGLE_CLOUD_LOCATION=${_REGION}"
+        EXTRA_ENV="$(printf '%s' "${_ENV_VARS}" | tr ';' ',')"
+        if [ -n "$$EXTRA_ENV" ]; then
+          ENV_ARG="$${ENV_ARG},$${EXTRA_ENV}"
+        fi
+        ENTRY_ARGS="$(printf '%s' "${_ENTRY_ARGS}" | tr ';' ',')"
+        RUN_ARGS="-m,${_ENTRY_MODULE}"
+        if [ -n "$$ENTRY_ARGS" ]; then
+          RUN_ARGS="$${RUN_ARGS},$${ENTRY_ARGS}"
+        fi
         gcloud run jobs deploy "${_JOB_ID}" \
           --project="${_TARGET_PROJECT}" --region="${_REGION}" \
           --image="${_REGISTRY}/${_IMAGE}@$${DIGEST}" \
-          --command=python3 --args="-m,${_ENTRY_MODULE}" \
+          --command=python3 --args="$${RUN_ARGS}" \
           --cpu="${_CPU}" --memory="${_MEMORY}" --task-timeout="${_TASK_TIMEOUT}" \
           --tasks="${_TASKS}" --parallelism="${_PARALLELISM}" --max-retries="${_MAX_RETRIES}" \
           --service-account="${_RUNTIME_SA}@${_TARGET_PROJECT}.iam.gserviceaccount.com" \
-          --update-env-vars="RELEASE_COMMIT_SHA=${_COMMIT_SHA}"
+          --update-env-vars="$${ENV_ARG}"
         echo "deployed ${_JOB_ID} to Prod, not executed"
     waitFor: ["resolve-digest"]
 

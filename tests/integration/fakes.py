@@ -8,7 +8,8 @@ do not try to open a real Neo4j driver or GCS bucket.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 
 class FakeGraphClient:

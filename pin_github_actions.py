@@ -3,10 +3,15 @@
 
 Tags like @v4 move. Pins do not. Re-run after changing action-pins.json.
 Skips Cloud Build YAML under phase2/ci/.
+
+Usage:
+    python3 pin_github_actions.py          rewrite files in place
+    python3 pin_github_actions.py --check  change nothing; exit 1 if any file needs pinning
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 from pathlib import Path
@@ -21,6 +26,7 @@ USES_RE = re.compile(
 )
 
 SKIP_DIRS = {ROOT / "phase2" / "ci"}
+SKIP_PARTS = {".git", ".venv", "node_modules"}
 
 
 def pin_comment(name: str) -> str:
@@ -82,6 +88,8 @@ def should_skip(path: Path) -> bool:
     """
     if path.suffix not in {".yml", ".yaml"}:
         return True
+    if SKIP_PARTS & set(path.relative_to(ROOT).parts):
+        return True
     for skip in SKIP_DIRS:
         try:
             path.relative_to(skip)
@@ -109,24 +117,38 @@ def iter_workflow_files() -> list[Path]:
     return sorted(out)
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> int:
     """Pin every uses: line in every workflow file that changed, printing which
-    ones touched.
+    ones touched. With --check, change nothing and report instead.
 
     Args:
-        None.
+        argv: command-line arguments; None means sys.argv.
     Returns:
-        None.
+        0, or 1 when --check found a file that needs pinning.
     Raises:
         None.
     """
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="change nothing; exit 1 if any file needs pinning",
+    )
+    args = parser.parse_args(argv)
+    stale = 0
     for path in iter_workflow_files():
         before = path.read_text()
         after = pin_text(before)
-        if after != before:
+        if after == before:
+            continue
+        stale += 1
+        if args.check:
+            print(f"needs pinning {path.relative_to(ROOT)}")
+        else:
             path.write_text(after)
             print(f"pinned {path.relative_to(ROOT)}")
+    return 1 if args.check and stale else 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

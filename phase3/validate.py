@@ -133,7 +133,7 @@ class MutationWorkflowTests(unittest.TestCase):
         self.assertIn("MUTATION_TRACKING_ISSUE", MUT_WF)
 
     def test_does_not_check_out_submodules(self) -> None:
-        # Post-phase0, sujho has no submodules — the 8 backend repos are
+        # Post-phase0, platform has no submodules — the 8 backend repos are
         # plain subdirectories now, not gitlinks.
         """Mutation does not ask for submodules that no longer exist.
 
@@ -247,7 +247,7 @@ class EvalWorkflowTests(unittest.TestCase):
         self.assertIn("Eval-Suite/run.py", EVAL_WF + script)
         self.assertIn("eval-openai-key", EVAL_WF)
         self.assertNotIn("ANTHROPIC_API_KEY", EVAL_WF)
-        # Post-phase0, sujho has no submodules to recurse into.
+        # Post-phase0, platform has no submodules to recurse into.
         self.assertNotIn("submodules: recursive", EVAL_WF)
 
     def test_fail_open_auth(self) -> None:
@@ -675,8 +675,8 @@ class ApplyTests(unittest.TestCase):
         Raises:
             None.
         """
-        self.assertIn("PHASE3_MUTATION_REPOS=(sujho)", LIB)
-        self.assertIn("PHASE3_EVAL_REPOS=(sujho)", LIB)
+        self.assertIn("PHASE3_MUTATION_REPOS=(platform)", LIB)
+        self.assertIn("PHASE3_EVAL_REPOS=(platform)", LIB)
         skip = LIB.split("PHASE3_SKIP_REPOS")[1].split(")")[0]
         self.assertIn("admin", skip)
         self.assertIn("text-agent", skip)

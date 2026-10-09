@@ -11,7 +11,8 @@ import signal
 import socket
 import subprocess
 import time
-from typing import Any, Iterator, Optional
+from typing import Any
+from collections.abc import Iterator
 
 import httpx
 import pytest
@@ -605,7 +606,7 @@ async def all_transcript_row_count(db) -> int:
     return total
 
 
-async def pending_action(db, sender_id: str) -> Optional[dict[str, Any]]:
+async def pending_action(db, sender_id: str) -> dict[str, Any] | None:
     """One sender's stored pending onboarding action, or None.
 
     Args:
@@ -620,7 +621,7 @@ async def pending_action(db, sender_id: str) -> Optional[dict[str, Any]]:
     return doc.to_dict() if doc.exists else None
 
 
-async def user_doc(db, user_id: str) -> Optional[dict[str, Any]]:
+async def user_doc(db, user_id: str) -> dict[str, Any] | None:
     """One user document body, or None.
 
     Args:

@@ -1,0 +1,107 @@
+name: Deploy Firestore rules and indexes (Pre-Prod)
+
+# Manual only. Merge to main does not run this. Config only — no image, no
+# build, nothing to promote, same recipe both environments share
+# (ci/firestore-deploy.yaml). Anyone with Write can run this one; only a
+# Lead can run firestore-prod.yaml.
+#
+# Order matters: an index can take minutes to finish building after this
+# returns. Check Firestore -> Indexes in sujho-preprod and confirm every
+# changed index shows "Ready" before running firestore-prod.yaml with this
+# same commit, and before deploying any code that depends on it.
+#
+# GCP trusts this job by its OIDC subject, repo:Sujho/platform:ref:refs/heads/main
+# (see phase2/scripts/provision-wif.sh) — not by "any workflow in the repo".
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Git commit to deploy (empty = tip of main)
+        required: false
+        type: string
+        default: ""
+
+concurrency:
+  group: firestore-sujho-preprod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - name: Refuse unless this run is on main
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "Refuse: dispatch from main, not $GITHUB_REF"
+            exit 1
+          fi
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve commit and refuse unless it's an ancestor of main
+        id: resolve
+        env:
+          COMMIT_INPUT: ${{ inputs.commit }}
+        run: |
+          set -euo pipefail
+          # fetch-depth: 0 already brought every branch, so origin/main is here
+          if [ -z "$COMMIT_INPUT" ]; then
+            SHA="$(git rev-parse --verify origin/main)"
+          else
+            if ! printf '%s' "$COMMIT_INPUT" | grep -Eq '^[0-9a-f]{7,40}$'; then
+              echo "Refuse: commit must be 7-40 lowercase hex characters."
+              exit 1
+            fi
+            SHA="$(git rev-parse --verify "${COMMIT_INPUT}^{commit}")"
+          fi
+          if ! git merge-base --is-ancestor "$SHA" origin/main; then
+            echo "Refuse: $SHA is not on main. Nothing unreviewed deploys from here."
+            exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          persist-credentials: false
+
+      - uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_WIF_SERVICE_ACCOUNT_PREPROD }}
+
+      - uses: google-github-actions/setup-gcloud@6a7c903a70c8625ed6700fa299f5ddb4ca6022e9 # v2.1.5
+
+      - name: Start Cloud Build
+        run: |
+          set -euo pipefail
+          # sujho-preprod has no Developer Connect link for this recipe either:
+          # the checkout above is uploaded as real source. No .git, no credentials file.
+          IGNORE="$RUNNER_TEMP/firestore.gcloudignore"
+          printf '%s\n' '.git' 'gha-creds-*.json' > "$IGNORE"
+
+          gcloud builds submit . \
+            --ignore-file="$IGNORE" \
+            --gcs-source-staging-dir=gs://sujho-preprod-build-source/source \
+            --project=sujho-preprod \
+            --region=asia-south1 \
+            --config=ci/firestore-deploy.yaml
+
+      - name: Reminder
+        run: |
+          echo "Check Firestore -> Indexes in sujho-preprod. Every changed index must"
+          echo "show 'Ready' before running firestore-prod.yaml with commit ${{ needs.validate.outputs.sha }}."

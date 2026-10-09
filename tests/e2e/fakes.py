@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any
+from collections.abc import Callable
 
 from infra.clients.users import (
     GiftCardDelivery,  # noqa: F401  (type reference only)
 )
 from infra.hubble.types import HubbleOrder, HubbleProduct
-from infra.llm.oai.types.responses import Round, Speech
+from infra.llm.oai.types.responses import Speech
 
 
 # --------------------------------------------------------------------------
@@ -36,7 +37,7 @@ class WhatsAppCall:
 class FakeWhatsAppClient:
     """Records every outbound Meta Graph API call in strict delivery order."""
 
-    def __init__(self, confirmations: Optional[Any] = None) -> None:
+    def __init__(self, confirmations: Any | None = None) -> None:
         """Bind an optional DeliveryConfirmations registry to auto-confirm
         sends.
 
@@ -290,8 +291,8 @@ class FakeWhatsAppClient:
         flow_token: str,
         body: str,
         cta: str,
-        screen: Optional[str] = None,
-        data: Optional[dict[str, Any]] = None,
+        screen: str | None = None,
+        data: dict[str, Any] | None = None,
     ) -> str:
         """Record one WhatsApp Flow launch.
 
@@ -443,7 +444,7 @@ class FakeOpenAIResponsesClient:
         self.calls: list[RespondCall] = []
         # Each entry is either a Speech to return or an Exception to raise.
         self.script: list[Any] = []
-        self.default: Optional[Any] = None
+        self.default: Any | None = None
 
     def reset(self) -> None:
         """Clear the call log and the script.
@@ -756,8 +757,8 @@ class FakeHubbleClient:
         self.products: dict[str, HubbleProduct] = {}
         # referenceId -> ordered list of HubbleOrder results to hand back, one
         # per get_order_by_reference call; the last entry repeats once drained.
-        self.order_reads: dict[str, list[Optional[HubbleOrder]]] = {}
-        self.place_order_result: Optional[HubbleOrder] = None
+        self.order_reads: dict[str, list[HubbleOrder | None]] = {}
+        self.place_order_result: HubbleOrder | None = None
         self.closed = False
 
     def reset(self) -> None:
@@ -838,7 +839,7 @@ class FakeHubbleClient:
 
     async def get_order_by_reference(
         self, reference_id: str
-    ) -> Optional[HubbleOrder]:
+    ) -> HubbleOrder | None:
         """Return the next scripted order read for this reference id.
 
         Args:

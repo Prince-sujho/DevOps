@@ -1,0 +1,77 @@
+[tool.mypy]
+strict = true
+python_version = "3.13"
+exclude = '''(?x)(
+    ^\.venv/
+    | ^Data/
+    | ^evals/
+    | /__pycache__/
+)'''
+# Submodules are not installed as packages and cross-import via sys.path
+# tricks. namespace_packages + explicit_package_bases
+# let mypy resolve `infra.*` etc. without a real install step.
+namespace_packages = true
+explicit_package_bases = true
+mypy_path = "."
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = [
+    ".venv",
+    "Data",
+    "evals/reports",
+    "__pycache__",
+    ".git",
+]
+
+[tool.ruff.lint]
+# RUF029 (unused-async) is still a preview-only rule in ruff 0.16.x; preview
+# is enabled here solely so that rule activates.
+preview = true
+select = [
+    "F",      # pyflakes
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "SIM",    # flake8-simplify
+    "UP",     # pyupgrade
+    "ASYNC",  # flake8-async: blocking calls / bad patterns in async functions
+    "RUF006", # asyncio.create_task/ensure_future result not retained (dangling task)
+    "RUF029", # async function that never awaits anything (unused-async)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Verbatim chat prompts in the eval corpus regularly exceed 100 chars.
+"evals/case_sets/*.py" = ["E501"]
+"Eval-Suite/eval_suite/cases/*.py" = ["E501"]
+
+[tool.pytest.ini_options]
+# Root-level pytest config only affects invocation from repo root; the
+# authoritative unit-suite config remains tests/unit/pytest.ini.
+
+[tool.coverage.run]
+branch = true
+source = [
+    "user_service/app/src",
+    "whatsapp_adapter/app/src",
+    "text_agent/app/src",
+    "document_worker/src",
+    "redirect_service/app/src",
+    "knowledge_store",
+    "infra",
+]
+relative_files = true
+omit = [
+    "mutants/*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+# Whole-product floor: integer percent measured by `pytest tests/unit tests/api`
+# with the source list above. There are no per-package floors.
+# Do not raise this until a later measured run says it went up.
+fail_under = 55

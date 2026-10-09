@@ -15,15 +15,12 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import json
 from contextlib import asynccontextmanager
 from functools import partial
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Any
 
 import httpx
-import pytest
 import pytest_asyncio
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -212,6 +209,7 @@ async def _adapter_test_lifespan(app, message_claims, turns, confirmations):
         settings=_build_settings(),
         flows_private_key=_RSA_PRIVATE_KEY,
         whatsapp=None,
+        users=None,
         message_claims=message_claims,
         turns=turns,
         confirmations=confirmations,

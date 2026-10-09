@@ -17,9 +17,7 @@ expectation -- that is a confirmed finding, not a fake-writing bug.
 
 from __future__ import annotations
 
-import asyncio
 from contextlib import asynccontextmanager
-from typing import Optional
 
 import httpx
 import pytest
@@ -32,16 +30,19 @@ from user_service.app.src.types import Settings
 
 from infra.clients.users import (
     Ambassador,
+    Campaign,
     GiftCard,
     GiftCardDelivery,
     Influencer,
     Persona,
-    Platform,
+    Referrer,
+    ReferrerAdapter,
     UserProfile,
     UserProfileAdapter,
 )
 from infra.hubble.types import HubbleOrder, HubbleProduct
 from infra.platform.gcp import GcpIdentity
+from google.api_core.exceptions import AlreadyExists
 from google.auth.credentials import AnonymousCredentials
 
 USERS_SERVICE_SECRET = "test-users-service-secret"
@@ -66,7 +67,7 @@ def _dump_attribution(attribution):
     return attribution
 
 
-def _attribution_handle(data: dict) -> Optional[str]:
+def _attribution_handle(data: dict) -> str | None:
     """The referrer handle on a stored user doc, or None if not
     referrer-attributed.
 
@@ -140,7 +141,7 @@ class FakeUsersRepository:
         """
         return UserProfileAdapter.validate_python(data)
 
-    async def get_by_phone(self, phone: str) -> Optional[UserProfile]:
+    async def get_by_phone(self, phone: str) -> UserProfile | None:
         """The stored profile for phone, or None.
 
         Args:
@@ -152,7 +153,7 @@ class FakeUsersRepository:
         """
         return await self.get_by_user_id(self.derive_user_id(phone))
 
-    async def get_by_user_id(self, user_id: str) -> Optional[UserProfile]:
+    async def get_by_user_id(self, user_id: str) -> UserProfile | None:
         """The stored profile for user_id, or None.
 
         Args:
@@ -359,64 +360,37 @@ class FakeReferrersRepository:
         """
         return set(self._by_handle.keys())
 
-    async def get_influencer(self, handle: str) -> Optional[Influencer]:
-        """The stored influencer at handle, or None if it's not an influencer.
+    async def get(self, handle: str) -> Referrer | None:
+        """The stored registry entry of any kind at handle, or None.
 
         Args:
             handle: the handle to look up.
         Returns:
-            The influencer, or None.
+            The influencer, ambassador or classroom entry, or None.
         Raises:
             None.
         """
         row = self._by_handle.get(handle)
-        if row is None or row["kind"] != "influencer":
+        if row is None:
             return None
-        return Influencer.model_validate({**row, "handle": handle})
+        return ReferrerAdapter.validate_python({**row, "handle": handle})
 
-    async def create_influencer(
-        self, handle: str, platform: Platform
-    ) -> Influencer:
-        """Mirrors the real repo: an existing doc id is returned as-is (no
-        collision error).
+    async def create(self, entry: Referrer) -> None:
+        """Mirrors the real repo: a taken handle of any kind raises
+        AlreadyExists.
 
         Args:
-            handle: the influencer's handle.
-            platform: the influencer's platform.
+            entry: the registry entry to store under its handle.
         Returns:
-            The created (or pre-existing) influencer.
-        Raises:
             None.
-        """
-        existing = self._by_handle.get(handle)
-        if existing is not None:
-            return Influencer.model_validate({**existing, "handle": handle})
-        from infra.utils.time import now_ms
-
-        influencer = Influencer(
-            handle=handle, platform=platform, createdAtMs=now_ms()
-        )
-        self._by_handle[handle] = influencer.model_dump(mode="json")
-        return influencer
-
-    async def create_ambassador(self, handle: str, user_id: str) -> Ambassador:
-        """Create-or-return: store and return a new ambassador at handle.
-
-        Args:
-            handle: the ambassador's handle.
-            user_id: the underlying user's id.
-        Returns:
-            The created ambassador.
         Raises:
-            None.
+            AlreadyExists: if the handle is already taken.
         """
-        from infra.utils.time import now_ms
-
-        ambassador = Ambassador(
-            handle=handle, userId=user_id, createdAtMs=now_ms()
+        if entry.handle in self._by_handle:
+            raise AlreadyExists(entry.handle)
+        self._by_handle[entry.handle] = entry.model_dump(
+            mode="json", exclude={"handle"}
         )
-        self._by_handle[handle] = ambassador.model_dump(mode="json")
-        return ambassador
 
     async def list_influencers(self) -> list[Influencer]:
         """Every stored influencer.
@@ -452,7 +426,7 @@ class FakeReferrersRepository:
 
     async def get_ambassador_by_user(
         self, user_id: str
-    ) -> Optional[Ambassador]:
+    ) -> Ambassador | None:
         """The stored ambassador for user_id, or None.
 
         Args:
@@ -480,14 +454,11 @@ class FakeReferrersRepository:
         self._by_handle.pop(handle, None)
 
     # --- test-only seeding helpers --------------------------------------------
-    def seed_influencer(
-        self, handle: str, platform: Platform, created_at_ms: int
-    ) -> None:
+    def seed_influencer(self, handle: str, created_at_ms: int) -> None:
         """Directly seed an influencer document at handle.
 
         Args:
             handle: the influencer's handle.
-            platform: the influencer's platform.
             created_at_ms: the document's creation time, epoch ms.
         Returns:
             None.
@@ -496,7 +467,6 @@ class FakeReferrersRepository:
         """
         self._by_handle[handle] = {
             "kind": "influencer",
-            "platform": platform,
             "createdAtMs": created_at_ms,
         }
 
@@ -551,8 +521,6 @@ class FakeCampaignsRepository:
         Raises:
             None.
         """
-        from infra.clients.users import Campaign
-
         rows = self._by_handle.get(handle, {})
         campaigns = [
             Campaign.model_validate({**w, "id": cid}) for cid, w in rows.items()
@@ -560,7 +528,7 @@ class FakeCampaignsRepository:
         campaigns.sort(key=lambda c: c.startMs, reverse=True)
         return campaigns
 
-    async def create(self, handle: str, body) -> "Campaign":
+    async def create(self, handle: str, body) -> Campaign:
         """Build one campaign, defaulting to the standard payout terms.
 
         Args:
@@ -571,8 +539,6 @@ class FakeCampaignsRepository:
         Raises:
             None.
         """
-        from infra.clients.users import Campaign
-
         window = body.model_dump()
         campaign_id = f"{body.startMs}_{body.endMs}"
         self._by_handle.setdefault(handle, {})[campaign_id] = window
@@ -795,7 +761,7 @@ class FakeGiftingRepository:
 
     async def get(
         self, user_id, gift_card_id: str
-    ) -> Optional[GiftCardDelivery]:
+    ) -> GiftCardDelivery | None:
         """The stored gift-card delivery for (user_id, gift_card_id), or None.
 
         Args:
@@ -840,91 +806,6 @@ class FakeGiftingRepository:
             None.
         """
         self._by_user.pop(user_id, None)
-
-
-# ---------------------------------------------------------------------------
-# Enrollments
-# ---------------------------------------------------------------------------
-
-
-class FakeEnrollmentsRepository:
-    """In-memory stand-in for infra.firestore.EnrollmentsRepository."""
-
-    def __init__(self) -> None:
-        """An empty (teacher_id, student_id) enrollment set.
-
-        Args:
-            None.
-        Returns:
-            None.
-        Raises:
-            None.
-        """
-        self._rows: set[tuple[str, str]] = set()
-
-    async def get_student_ids_for_teacher(self, teacher_id: str) -> list[str]:
-        """Every student id enrolled under teacher_id.
-
-        Args:
-            teacher_id: the teacher to look up.
-        Returns:
-            The enrolled student ids.
-        Raises:
-            None.
-        """
-        return [s for t, s in self._rows if t == teacher_id]
-
-    async def get_teacher_ids_for_student(self, student_id: str) -> list[str]:
-        """Every teacher id student_id is enrolled under.
-
-        Args:
-            student_id: the student to look up.
-        Returns:
-            The teacher ids student_id is enrolled under.
-        Raises:
-            None.
-        """
-        return [t for t, s in self._rows if s == student_id]
-
-    async def create(self, teacher_user_id: str, student_user_id: str) -> None:
-        """Add one (teacher, student) enrollment pair.
-
-        Args:
-            teacher_user_id: the teacher's user id.
-            student_user_id: the student's user id.
-        Returns:
-            None.
-        Raises:
-            None.
-        """
-        self._rows.add((teacher_user_id, student_user_id))
-
-    async def delete(self, teacher_user_id: str, student_user_id: str) -> None:
-        """Remove one (teacher, student) enrollment pair, if it exists.
-
-        Args:
-            teacher_user_id: the teacher's user id.
-            student_user_id: the student's user id.
-        Returns:
-            None.
-        Raises:
-            None.
-        """
-        self._rows.discard((teacher_user_id, student_user_id))
-
-    async def delete_for_user(self, user_id: str) -> None:
-        """Remove every enrollment pair involving user_id, either side.
-
-        Args:
-            user_id: the user to clear.
-        Returns:
-            None.
-        Raises:
-            None.
-        """
-        self._rows = {
-            (t, s) for t, s in self._rows if t != user_id and s != user_id
-        }
 
 
 # ---------------------------------------------------------------------------
@@ -1303,8 +1184,8 @@ class FakeHubbleClient:
             None.
         """
         self.products: dict[str, HubbleProduct] = {}
-        self.place_order_result: Optional[HubbleOrder] = None
-        self.order_reads: dict[str, Optional[HubbleOrder]] = {}
+        self.place_order_result: HubbleOrder | None = None
+        self.order_reads: dict[str, HubbleOrder | None] = {}
         self.place_order_calls: list[dict] = []
 
     async def get_product(self, product_id: str) -> HubbleProduct:
@@ -1354,7 +1235,7 @@ class FakeHubbleClient:
 
     async def get_order_by_reference(
         self, reference_id: str
-    ) -> Optional[HubbleOrder]:
+    ) -> HubbleOrder | None:
         """The scripted order read for reference_id, or None.
 
         Args:
@@ -1456,7 +1337,6 @@ class Fakes:
             None.
         """
         self.users = FakeUsersRepository(USER_ID_HMAC_SECRET)
-        self.enrollments = FakeEnrollmentsRepository()
         self.threads = FakeThreadsRepository()
         self.referrers = FakeReferrersRepository()
         self.clicks = FakeClicksRepository()
@@ -1526,7 +1406,6 @@ def _test_app_state(fakes: Fakes) -> AppState:
         db=None,
         settings=_test_settings(),
         users=fakes.users,
-        enrollments=fakes.enrollments,
         threads=fakes.threads,
         referrers=fakes.referrers,
         clicks=fakes.clicks,
@@ -1618,8 +1497,8 @@ def student_profile_input(
     phone: str,
     name: str = "Asha",
     grade: int = 8,
-    subjects: Optional[list[str]] = None,
-    institution_id: Optional[str] = "school-1",
+    subjects: list[str] | None = None,
+    institution_id: str | None = "school-1",
     institution_name: str = "Delhi Public School",
 ) -> dict:
     """A well-formed student profile request body.
@@ -1651,9 +1530,9 @@ def student_profile_input(
 def teacher_profile_input(
     phone: str,
     name: str = "Mr. Rao",
-    grades: Optional[list[int]] = None,
-    subjects: Optional[list[str]] = None,
-    institution_id: Optional[str] = "school-1",
+    grades: list[int] | None = None,
+    subjects: list[str] | None = None,
+    institution_id: str | None = "school-1",
     institution_name: str = "Delhi Public School",
 ) -> dict:
     """A well-formed teacher profile request body.
@@ -1683,7 +1562,7 @@ def teacher_profile_input(
 
 
 def create_user_body(
-    profile: dict, pre_onboarding_texts: Optional[list[str]] = None
+    profile: dict, pre_onboarding_texts: list[str] | None = None
 ) -> dict:
     """A POST /internal/users request body.
 

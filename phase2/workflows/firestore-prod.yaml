@@ -1,0 +1,96 @@
+name: Deploy Firestore rules and indexes (Prod)
+
+# Manual only. Deploys the exact same commit already deployed — and
+# confirmed "Ready" in Firestore -> Indexes — on Pre-Prod. No rebuild,
+# nothing to promote: it's config, not an image. The deploy job runs in
+# `environment: production`, same gate as the service and job Prod deploys:
+# no approval pause, but Google only accepts a run that a Lead started.
+#
+# GCP trusts only this job's OIDC subject,
+# repo:Sujho/platform:environment:production (see
+# phase2/scripts/provision-wif.sh), and the Environment is limited to `main`,
+# so a workflow on some other branch cannot impersonate the prod deploy
+# account.
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: >-
+          Full 40-character git commit to deploy — the one already
+          confirmed Ready on Pre-Prod. Typed once.
+        required: true
+        type: string
+
+concurrency:
+  group: firestore-sujho-478914
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse unless this run is on main
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "Refuse: dispatch from main, not $GITHUB_REF"
+            exit 1
+          fi
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Refuse unless the typed commit is a full SHA and an ancestor of main
+        env:
+          COMMIT: ${{ inputs.commit }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "Refuse: commit must be the full 40-character lowercase SHA."
+            exit 1
+          fi
+          git cat-file -e "${COMMIT}^{commit}"
+          if ! git merge-base --is-ancestor "$COMMIT" origin/main; then
+            echo "Refuse: $COMMIT is not on main."
+            exit 1
+          fi
+
+  # signs in as the prod deploy account only when a Lead started this run
+  deploy:
+    needs: validate
+    environment: production
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.commit }}
+          persist-credentials: false
+
+      - uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_WIF_SERVICE_ACCOUNT_PROD }}
+
+      - uses: google-github-actions/setup-gcloud@6a7c903a70c8625ed6700fa299f5ddb4ca6022e9 # v2.1.5
+
+      - name: Start Cloud Build
+        run: |
+          set -euo pipefail
+          # sujho-478914 has no Developer Connect link (it never fetches from
+          # GitHub), so the checkout above is uploaded as real source. No
+          # .git, no credentials file.
+          IGNORE="$RUNNER_TEMP/firestore.gcloudignore"
+          printf '%s\n' '.git' 'gha-creds-*.json' > "$IGNORE"
+
+          gcloud builds submit . \
+            --ignore-file="$IGNORE" \
+            --gcs-source-staging-dir=gs://sujho-478914-build-source/source \
+            --project=sujho-478914 \
+            --region=asia-south1 \
+            --config=ci/firestore-deploy.yaml

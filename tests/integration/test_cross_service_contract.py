@@ -14,7 +14,6 @@ from __future__ import annotations
 import pytest
 
 from infra.clients.users import (
-    WHATSAPP_THREAD_KEY,
     AmbassadorStatus,
     CreateUserRequest,
     ProfileUpdate,
@@ -25,9 +24,10 @@ from infra.clients.users import (
     user_rows,
 )
 from infra.clients.users.client import UsersClient
-from infra.conversation import TextMessage
+from infra.conversation import TextMessage, WHATSAPP_THREAD_KEY
 from infra.llm.content import TextContent
 from whatsapp_adapter.app.src.input.profiles import profile_input_from_flow
+from whatsapp_adapter.app.src.types import ProfileFlowPayload
 
 from . import constants as K
 from .helpers import seed_reward_catalogue, student_profile
@@ -35,24 +35,24 @@ from .helpers import seed_reward_catalogue, student_profile
 pytestmark = pytest.mark.asyncio
 
 
-def _flow_completion(name: str) -> dict:
-    """A completed onboarding Flow response body, as Meta would send it.
+def _flow_completion(name: str) -> ProfileFlowPayload:
+    """A completed onboarding Flow payload, as the adapter parses it.
 
     Args:
         name: the completing user's name.
     Returns:
-        The Flow completion body.
+        The parsed Flow payload.
     Raises:
         None.
     """
-    return {
-        "flow_token": "onboarding",
-        "name": name,
-        "institution": "Delhi Public School",
-        "institutionId": "school-dps-001",
-        "grade": "9",
-        "subjects": ["mathematics", "science"],
-    }
+    return ProfileFlowPayload(
+        persona="student",
+        name=name,
+        institution="Delhi Public School",
+        institutionId="school-dps-001",
+        grades=[9],
+        subjects=["mathematics", "science"],
+    )
 
 
 @pytest.fixture
@@ -88,9 +88,7 @@ async def test_adapter_create_user_payload_validates_and_round_trips(api):
         None.
     """
     flow = _flow_completion("Neha")
-    profile = profile_input_from_flow(
-        phone="910000070001", persona="student", response_json=flow
-    )
+    profile = profile_input_from_flow(phone="910000070001", payload=flow)
     request = CreateUserRequest(profile=profile, preOnboardingTexts=["hi"])
 
     response = await api.post(
@@ -99,7 +97,7 @@ async def test_adapter_create_user_payload_validates_and_round_trips(api):
     assert response.status_code == 200
     stored = UserProfileAdapter.validate_python(response.json())
     assert stored.phone == profile.phone
-    assert stored.name == flow["name"]
+    assert stored.name == flow.name
     assert stored.persona == profile.persona
     assert stored.scope == profile.scope
 
@@ -231,12 +229,12 @@ async def test_users_client_parses_live_responses(users_client):
     created = await users_client.create_user(
         CreateUserRequest(
             profile=profile_input_from_flow(
-                phone="910000070008", persona="student", response_json=flow
+                phone="910000070008", payload=flow
             ),
             preOnboardingTexts=[],
         )
     )
-    assert created.name == flow["name"]
+    assert created.name == flow.name
     fetched = await users_client.get_user(created.userId)
     assert fetched.userId == created.userId
     assert fetched.phone == created.phone

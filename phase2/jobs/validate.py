@@ -21,15 +21,17 @@ BUILD = (CI / "job-build-deploy.yaml").read_text()
 DEPLOY_ONLY = (CI / "job-deploy-only.yaml").read_text()
 
 
-def lookup(job_id: str) -> dict[str, str]:
+def lookup(job_id: str, env: str = "preprod") -> dict[str, str]:
     """Shell out to lookup_job.py for one job id's derived fields, as JSON.
 
     Args:
         job_id: the catalog job id to look up.
+        env: "preprod" or "prod".
     Returns:
         The derived fields as a dict.
     Raises:
-        subprocess.CalledProcessError: job_id isn't in the catalog.
+        subprocess.CalledProcessError: job_id isn't in the catalog, or the
+            catalog entry is missing a required field.
     """
     proc = subprocess.run(
         [
@@ -37,6 +39,8 @@ def lookup(job_id: str) -> dict[str, str]:
             str(HERE / "scripts" / "lookup_job.py"),
             "--id",
             job_id,
+            "--env",
+            env,
             "--format=json",
         ],
         check=True,
@@ -91,6 +95,26 @@ class CatalogTests(unittest.TestCase):
             data = lookup(job["id"])
             self.assertEqual(data["JOB_ID"], job["id"])
 
+    def test_every_job_has_an_explicit_group(self) -> None:
+        """Every catalog job names an explicit group that exists in
+        image_groups.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        for job in CATALOG["jobs"]:
+            group = job.get("group")
+            self.assertTrue(group, f'{job["id"]} is missing a "group" field')
+            self.assertIn(
+                group,
+                CATALOG["image_groups"],
+                f"{job['id']}'s group {group!r} is not a real image_group",
+            )
+
     def test_sessions_is_hourly_and_others_are_run_by_hand(self) -> None:
         """sessions and the probe job are scheduled; the rest are run
         by hand.
@@ -119,8 +143,12 @@ class CatalogTests(unittest.TestCase):
                 f"{job_id} should be run-by-hand only",
             )
 
-    def test_entry_module_derivation(self) -> None:
-        """A job's entry module and file are derived correctly from its id.
+    def test_entry_is_the_catalog_field_not_the_job_id(self) -> None:
+        """Every job runs its group's entry module and its own args list.
+
+        The knowledge-store jobs all start knowledge_store.run plus a verb.
+        A name-prefix guess of knowledge_store/jobs/<verb>.py is not a file
+        on the tree that gets submitted.
 
         Args:
             None.
@@ -129,18 +157,20 @@ class CatalogTests(unittest.TestCase):
         Raises:
             None.
         """
-        cases = {
-            "knowledge-store-sessions": "knowledge_store.jobs.sessions",
-            "knowledge-store-import-ncert": "knowledge_store.jobs.import_ncert",
-            "knowledge-store-import-educart": "knowledge_store.jobs.import_educ"
-            "art",
-        }
-        for job_id, expected_module in cases.items():
-            data = lookup(job_id)
-            self.assertEqual(data["ENTRY_MODULE"], expected_module)
+        for job in CATALOG["jobs"]:
+            group = CATALOG["image_groups"][job["group"]]
+            data = lookup(job["id"])
+            self.assertEqual(data["ENTRY_MODULE"], group["entry_module"])
+            self.assertEqual(data["ENTRY_FILE"], group["entry_file"])
             self.assertEqual(
-                data["ENTRY_FILE"], expected_module.replace(".", "/") + ".py"
+                data["ENTRY_FILE"],
+                group["entry_module"].replace(".", "/") + ".py",
             )
+            self.assertEqual(data["ENTRY_ARGS"], ";".join(job["args"]))
+        sessions = lookup("knowledge-store-sessions")
+        self.assertEqual(sessions["ENTRY_MODULE"], "knowledge_store.run")
+        self.assertEqual(sessions["ENTRY_ARGS"], "sessions")
+        self.assertEqual(lookup("probe-job")["ENTRY_ARGS"], "")
 
     def test_needs_entry_id_only_on_ingest_and_remove(self) -> None:
         """Only ingest and remove require an entry_id; the others don't.
@@ -175,6 +205,52 @@ class CatalogTests(unittest.TestCase):
         """
         self.assertEqual(lookup("knowledge-store-ingest")["MEMORY"], "4Gi")
 
+    def test_probe_checks_are_prod_only(self) -> None:
+        """Pre-Prod does not set PROBE_CHECKS. Prod sets it on.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        self.assertEqual(lookup("probe-job", "preprod")["ENV_VARS"], "")
+        self.assertEqual(
+            lookup("probe-job", "prod")["ENV_VARS"], "PROBE_CHECKS=on"
+        )
+
+    def test_missing_entry_or_args_refuses(self) -> None:
+        """A group without an entry, or a job without args, exits nonzero.
+
+        Args:
+            None.
+        Returns:
+            None.
+        Raises:
+            None.
+        """
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "lookup_job", HERE / "scripts" / "lookup_job.py"
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with self.assertRaises(SystemExit):
+            module.require_entry("example", {})
+        with self.assertRaises(SystemExit):
+            module.require_entry(
+                "example",
+                {
+                    "entry_module": "knowledge_store.run",
+                    "entry_file": "knowledge_store/jobs/run.py",
+                },
+            )
+        with self.assertRaises(SystemExit):
+            module.require_args({"id": "example"})
+
     def test_unlisted_job_id_refuses(self) -> None:
         """An id not in the catalog makes lookup_job.py exit nonzero.
 
@@ -192,6 +268,8 @@ class CatalogTests(unittest.TestCase):
                     str(HERE / "scripts" / "lookup_job.py"),
                     "--id",
                     "not-a-real-job",
+                    "--env",
+                    "preprod",
                 ],
                 check=True,
                 capture_output=True,
@@ -258,8 +336,9 @@ class WorkflowTests(unittest.TestCase):
             self.assertIn("merge-base --is-ancestor", text)
             self.assertIn("fetch-depth: 0", text)
 
-    def test_prod_has_the_approval_gate_preprod_does_not(self) -> None:
-        """Only Prod's workflow requires the production environment gate.
+    def test_only_prod_uses_the_production_environment(self) -> None:
+        """Only Prod's workflow runs in the production Environment (the one WIF
+        trusts only for Lead-started runs); Pre-Prod does not.
 
         Args:
             None.
@@ -303,7 +382,7 @@ class WorkflowTests(unittest.TestCase):
     def test_prod_refuses_unless_image_was_verified(self) -> None:
         """Prod refuses an image Pre-Prod never published: the check lives in
         Cloud Build's resolve-digest, and the workflow itself holds no GCP
-        credential before a Lead approves.
+        credential before the production Environment starts.
 
         Args:
             None.
@@ -346,6 +425,9 @@ class WorkflowTests(unittest.TestCase):
         for text in (PREPROD, PROD):
             self.assertIn("NEEDS_ENTRY_ID", text)
             self.assertIn("needs entry_id to execute", text)
+            self.assertIn('SUBS+=",_ENTRY_ARGS=$ENTRY_ARGS"', text)
+            self.assertIn('--args="$RUN_ARGS,$ENTRY_ID"', text)
+            self.assertNotIn('--args="-m,$ENTRY_MODULE,$ENTRY_ID"', text)
 
 
     def test_entry_id_is_checked_before_it_reaches_gcloud(self) -> None:
@@ -538,6 +620,10 @@ class CloudBuildRecipeTests(unittest.TestCase):
         self.assertLess(prove, BUILD.index("id: sync-schedule"))
         self.assertLess(prove, publish)
         self.assertIn('gcloud run jobs execute "${_JOB_ID}"', BUILD)
+        self.assertIn('--args="$${RUN_ARGS}"', BUILD)
+        self.assertIn('--args="$${RUN_ARGS}"', DEPLOY_ONLY)
+        self.assertIn("${_ENTRY_ARGS}", BUILD)
+        self.assertIn("${_ENTRY_ARGS}", DEPLOY_ONLY)
         self.assertIn("--wait", BUILD[prove:publish])
         self.assertIn('_NEEDS_ENTRY_ID}" = "1"', BUILD[prove:publish])
         self.assertNotIn("jobs execute", DEPLOY_ONLY)

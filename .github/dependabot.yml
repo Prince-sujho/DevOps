@@ -1,5 +1,5 @@
 # One copy of this file per repo. Post-phase0: Sujho/platform (the 8 backend
-# repos merged in), sujho-ops-mcp, design-system, docs, hiring, www.
+# repos and docs merged in), sujho-ops-mcp, design-system, hiring, www.
 # Weekly, not per-PR — this is a bot opening its own PRs, not a gate on
 # anyone else's. Those PRs go through the normal one-Lead-approval path
 # like any other change.

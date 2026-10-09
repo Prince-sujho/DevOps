@@ -1,17 +1,18 @@
 name: Deploy Cloud Run service (Prod)
 
 # Manual only. Deploys the exact image already verified on Pre-Prod, never
-# rebuilds. The deploy job's `environment: production` pauses for a Lead's
-# approval — set that Environment's "Prevent self-review" so the starter
-# can't approve their own run (phase2/verify-phase2.sh --remote checks it).
+# rebuilds. There is no approval pause: this GitHub plan cannot require
+# reviewers on a private repo. Instead Google only accepts a run of the
+# `production` Environment that a Lead started, so if anyone else starts it,
+# the deploy job fails at sign-in by design.
 #
 # GCP trusts only this job's OIDC subject,
 # repo:Sujho/platform:environment:production (see
-# phase2/scripts/provision-wif.sh). That subject exists only after the
-# Environment's approval, so a workflow on some other branch cannot
-# impersonate the prod deploy account and skip the approval.
+# phase2/scripts/provision-wif.sh), and the Environment is limited to `main`,
+# so a workflow on some other branch cannot impersonate the prod deploy
+# account.
 #
-# Nothing here authenticates to GCP before approval: the "tested image
+# Nothing here authenticates to GCP before that sign-in: the "tested image
 # exists" check happens inside Cloud Build (deploy-only.yaml's
 # resolve-digest), which only finds images Pre-Prod published after verify.
 
@@ -77,7 +78,7 @@ jobs:
             exit 1
           fi
 
-  # paused until a Lead approves on the production Environment
+  # signs in as the prod deploy account only when a Lead started this run
   deploy:
     needs: validate
     environment: production

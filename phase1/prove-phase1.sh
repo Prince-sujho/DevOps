@@ -2,7 +2,7 @@
 # Config checks (verify --remote) cannot prove the gate. This is the human
 # proof: a dummy PR into main after apply has finished.
 #
-# Pilot is sujho itself, not a service repo — post-phase0 that's the only
+# Pilot is platform itself, not a service repo — post-phase0 that's the only
 # repo anyone actually merges into.
 #
 # Usage: see usage() below — ./prove-phase1.sh [--apply]
@@ -13,7 +13,7 @@
 usage() {
   cat <<'EOF'
   ./prove-phase1.sh          # print the dummy-PR recipe; no GitHub
-  ./prove-phase1.sh --apply  # open one PR on sujho into main
+  ./prove-phase1.sh --apply  # open one PR on platform into main
 
 PR into `main` as Prince
    Lead Code-Owner review is required. Prince approving himself is not enough.
@@ -31,7 +31,7 @@ if ! parse_apply_flag "$@" ; then
   exit 0
 fi
 
-PILOT="sujho"
+PILOT="platform"
 STAMP="$(date +%Y%m%d%H%M%S)"
 MAIN_BRANCH="prove/phase1-main-${STAMP}"
 

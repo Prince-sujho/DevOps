@@ -109,7 +109,7 @@ fi
 
 # Who may call a service is a separate, one-time decision from deploying it.
 # A deploy cannot make it, on purpose: setting a service's IAM policy needs
-# run.admin, and the builder only has run.developer (IAM-table.md 2), so the
+# run.admin, and the builder only has run.developer (see IAM-table.md), so the
 # recipes pass no allow-unauthenticated flag at all. These five Pre-Prod
 # services answer public HTTP (WhatsApp webhooks, short links); `admin` is
 # deliberately absent — it stays private behind its load balancer.

@@ -3,8 +3,9 @@ name: Deploy Cloud Run job (Prod)
 # Manual only. Deploys the exact image already verified on Pre-Prod, never
 # rebuilds. Same environment: production gate as cloud-run-prod-service.yaml,
 # and GCP trusts only that Environment's OIDC subject
-# (repo:Sujho/platform:environment:production). Nothing authenticates to GCP
-# before approval; the "tested image exists" check runs inside Cloud Build
+# (repo:Sujho/platform:environment:production), accepted only for a run a Lead
+# started. Nothing authenticates to GCP before that sign-in; the "tested image
+# exists" check runs inside Cloud Build
 # (job-deploy-only.yaml's resolve-digest).
 
 on:
@@ -77,7 +78,7 @@ jobs:
             exit 1
           fi
 
-  # paused until a Lead approves on the production Environment
+  # signs in as the prod deploy account only when a Lead started this run
   deploy:
     needs: validate
     environment: production
@@ -102,13 +103,14 @@ jobs:
         run: |
           set -euo pipefail
           SHORT="$(printf '%s' "$SHA" | cut -c1-12)"
-          eval "$(python3 jobs/scripts/lookup_job.py --id "$JOB_ID")"
+          eval "$(python3 jobs/scripts/lookup_job.py --id "$JOB_ID" --env prod)"
 
           # one quoted string: values with spaces stay one substitution
           SUBS="_JOB_ID=$JOB_ID"
           SUBS+=",_IMAGE=$IMAGE"
           SUBS+=",_RUNTIME_SA=$RUNTIME_SA"
           SUBS+=",_ENTRY_MODULE=$ENTRY_MODULE"
+          SUBS+=",_ENTRY_ARGS=$ENTRY_ARGS"
           SUBS+=",_CPU=$CPU"
           SUBS+=",_MEMORY=$MEMORY"
           SUBS+=",_TASK_TIMEOUT=$TASK_TIMEOUT"
@@ -116,6 +118,7 @@ jobs:
           SUBS+=",_PARALLELISM=$PARALLELISM"
           SUBS+=",_MAX_RETRIES=$MAX_RETRIES"
           SUBS+=",_SCHEDULE=$SCHEDULE"
+          SUBS+=",_ENV_VARS=$ENV_VARS"
           SUBS+=",_COMMIT_SHA=$SHA"
           SUBS+=",_SHORT_SHA=$SHORT"
 
@@ -139,7 +142,7 @@ jobs:
           ENTRY_ID: ${{ inputs.entry_id }}
         run: |
           set -euo pipefail
-          eval "$(python3 jobs/scripts/lookup_job.py --id "$JOB_ID")"
+          eval "$(python3 jobs/scripts/lookup_job.py --id "$JOB_ID" --env prod)"
           if [ "$NEEDS_ENTRY_ID" = "1" ]; then
             if [ -z "$ENTRY_ID" ]; then
               echo "this job needs entry_id to execute"
@@ -153,9 +156,15 @@ jobs:
               echo "[A-Za-z0-9_.:-] — no commas, spaces or shell characters."
               exit 1
             fi
+            # execute replaces the template args, so the verb has to be here
+            # too. parse_job_args reads the verb, then the entry id.
+            RUN_ARGS="-m,$ENTRY_MODULE"
+            if [ -n "$ENTRY_ARGS" ]; then
+              RUN_ARGS="$RUN_ARGS,$(printf '%s' "$ENTRY_ARGS" | tr ';' ',')"
+            fi
             gcloud run jobs execute "$JOB_ID" \
               --project=sujho-478914 --region=asia-south1 \
-              --args="-m,$ENTRY_MODULE,$ENTRY_ID" --wait
+              --args="$RUN_ARGS,$ENTRY_ID" --wait
           else
             gcloud run jobs execute "$JOB_ID" \
               --project=sujho-478914 --region=asia-south1 --wait

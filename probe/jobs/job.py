@@ -1,9 +1,10 @@
 """Throwaway probe: a health service, and a job that checks jobs-run.
 
 The Cloud Run service starts this module with the argument ``serve``.
-The Cloud Run job starts it with no arguments. Pre-Prod prints ok.
-Production uses jobs-run for real: a secret, one Firestore document,
-and a write then delete in the staging bucket.
+The Cloud Run job starts it with no arguments. PROBE_CHECKS=on runs the
+real jobs-run checks: a secret, one Firestore document, and a write then
+delete in the bucket named by the KNOWLEDGE_STORE_GCS_BUCKET secret.
+Anything else just prints ok.
 """
 
 from __future__ import annotations
@@ -17,9 +18,8 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-PROD_PROJECT = "sujho-478914"
-BUCKET = "sujho-knowledge-store-staging"
 SECRET = "NEO4J_URI"
+BUCKET_SECRET = "KNOWLEDGE_STORE_GCS_BUCKET"
 TOKEN_URL = (
     "http://metadata.google.internal/computeMetadata/v1/"
     "instance/service-accounts/default/token"
@@ -81,11 +81,42 @@ def _token(urlopen) -> str:
     return token
 
 
-def _read_secret(project: str, token: str, urlopen) -> None:
+def _read_secret_value(
+    project: str, region: str, secret_name: str, token: str, urlopen
+) -> bytes:
+    """Fetch one secret's latest version and return its decoded value.
+
+    Args:
+        project: the Google project that holds the secret.
+        region: the region the secret lives in (secrets are regional).
+        secret_name: the Secret Manager secret id.
+        token: bearer token for jobs-run.
+        urlopen: urllib-style opener.
+    Returns:
+        The decoded secret payload.
+    Raises:
+        RuntimeError: the secret could not be read, or was empty.
+    """
+    url = (
+        f"https://secretmanager.{region}.rep.googleapis.com/v1/projects/"
+        f"{project}/locations/{region}/secrets/{secret_name}/versions/latest:access"
+    )
+    status, raw = _request(url, token, urlopen)
+    if status != 200:
+        raise RuntimeError(f"secret read failed ({secret_name}): HTTP {status}")
+    encoded = json.loads(raw.decode()).get("payload", {}).get("data", "")
+    decoded = base64.b64decode(encoded) if encoded else b""
+    if not decoded:
+        raise RuntimeError(f"secret read failed ({secret_name}): empty value")
+    return decoded
+
+
+def _read_secret(project: str, region: str, token: str, urlopen) -> None:
     """Confirm NEO4J_URI can be read. The value is never printed.
 
     Args:
         project: the Google project that holds the secret.
+        region: the region the secret lives in.
         token: bearer token for jobs-run.
         urlopen: urllib-style opener.
     Returns:
@@ -93,16 +124,7 @@ def _read_secret(project: str, token: str, urlopen) -> None:
     Raises:
         RuntimeError: the secret could not be read, or was empty.
     """
-    url = (
-        "https://secretmanager.googleapis.com/v1/projects/"
-        f"{project}/secrets/{SECRET}/versions/latest:access"
-    )
-    status, raw = _request(url, token, urlopen)
-    if status != 200:
-        raise RuntimeError(f"secret read failed: HTTP {status}")
-    encoded = json.loads(raw.decode()).get("payload", {}).get("data", "")
-    if not encoded or not base64.b64decode(encoded):
-        raise RuntimeError("secret read failed: empty value")
+    _read_secret_value(project, region, SECRET, token, urlopen)
 
 
 def _read_one_document(project: str, token: str, urlopen) -> None:
@@ -136,10 +158,11 @@ def _read_one_document(project: str, token: str, urlopen) -> None:
         raise RuntimeError("firestore read failed: no documents")
 
 
-def _write_then_delete(token: str, urlopen) -> None:
-    """Write probe/<timestamp> to the staging bucket, then delete it.
+def _write_then_delete(bucket: str, token: str, urlopen) -> None:
+    """Write probe/<timestamp> to the bucket, then delete it.
 
     Args:
+        bucket: the GCS bucket name to write to.
         token: bearer token for jobs-run.
         urlopen: urllib-style opener.
     Returns:
@@ -151,7 +174,7 @@ def _write_then_delete(token: str, urlopen) -> None:
     quoted = name.replace("/", "%2F")
     upload = (
         "https://storage.googleapis.com/upload/storage/v1/b/"
-        f"{BUCKET}/o?uploadType=media&name={quoted}"
+        f"{bucket}/o?uploadType=media&name={quoted}"
     )
     status, _raw = _request(
         upload, token, urlopen, b"ok", content_type="text/plain"
@@ -160,7 +183,7 @@ def _write_then_delete(token: str, urlopen) -> None:
         raise RuntimeError(f"bucket write failed: HTTP {status}")
     delete = (
         "https://storage.googleapis.com/storage/v1/b/"
-        f"{BUCKET}/o/{quoted}"
+        f"{bucket}/o/{quoted}"
     )
     req = urllib.request.Request(
         delete, headers={"Authorization": f"Bearer {token}"}, method="DELETE"
@@ -174,11 +197,12 @@ def _write_then_delete(token: str, urlopen) -> None:
         raise RuntimeError(f"bucket delete failed: HTTP {status}")
 
 
-def run_production(project: str, urlopen) -> None:
-    """Run the three production checks. Stop on the first failure.
+def run_production(project: str, region: str, urlopen) -> None:
+    """Run the three jobs-run checks. Stop on the first failure.
 
     Args:
-        project: must be the production project.
+        project: the Google project the checks run against.
+        region: the region secrets and the bucket live in.
         urlopen: urllib-style opener.
     Returns:
         None.
@@ -186,26 +210,37 @@ def run_production(project: str, urlopen) -> None:
         RuntimeError: one of the three checks failed.
     """
     token = _token(urlopen)
-    _read_secret(project, token, urlopen)
+    _read_secret(project, region, token, urlopen)
+    bucket = _read_secret_value(
+        project, region, BUCKET_SECRET, token, urlopen
+    ).decode()
     _read_one_document(project, token, urlopen)
-    _write_then_delete(token, urlopen)
+    _write_then_delete(bucket, token, urlopen)
 
 
-def run_job(project: str, urlopen) -> int:
-    """Pre-Prod prints ok. Production runs the three jobs-run checks.
+def run_job(project: str, region: str, checks_on: bool, urlopen) -> int:
+    """checks_on decides whether the real jobs-run checks run.
 
     Args:
         project: GOOGLE_CLOUD_PROJECT, or empty when it is unset.
+        region: GOOGLE_CLOUD_LOCATION, or empty when it is unset.
+        checks_on: PROBE_CHECKS == "on".
         urlopen: urllib-style opener.
     Returns:
         0 on success.
     Raises:
-        RuntimeError: a production check failed.
+        RuntimeError: a jobs-run check failed, or PROBE_CHECKS is on and
+            project or region is empty.
     """
-    if project != PROD_PROJECT:
+    if not checks_on:
         print("ok")
         return 0
-    run_production(project, urlopen)
+    if not project or not region:
+        raise RuntimeError(
+            "GOOGLE_CLOUD_PROJECT and GOOGLE_CLOUD_LOCATION are required "
+            "when PROBE_CHECKS=on"
+        )
+    run_production(project, region, urlopen)
     print("ok")
     return 0
 
@@ -295,8 +330,10 @@ def main(argv: list[str]) -> int:
         serve()
         return 0
     project = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
+    region = os.environ.get("GOOGLE_CLOUD_LOCATION", "")
+    checks_on = os.environ.get("PROBE_CHECKS", "") == "on"
     try:
-        return run_job(project, urllib.request.urlopen)
+        return run_job(project, region, checks_on, urllib.request.urlopen)
     except RuntimeError as err:
         print(f"probe-job failed: {err}", file=sys.stderr)
         return 1

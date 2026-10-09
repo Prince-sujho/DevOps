@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from typing import Any, Optional
+from typing import Any
 
 from . import constants as K
 
@@ -67,7 +67,7 @@ def _envelope(value: dict[str, Any]) -> dict[str, Any]:
 def _value(
     message: dict[str, Any],
     profile_name: str,
-    sender_phone: Optional[str],
+    sender_phone: str | None,
     sender_id: str,
 ) -> dict[str, Any]:
     """Build one messages value block with the contacts index the adapter reads.
@@ -100,7 +100,7 @@ def _value(
 
 
 def _message_base(
-    message_id: str, sender_id: str, sender_phone: Optional[str], timestamp: str
+    message_id: str, sender_id: str, sender_phone: str | None, timestamp: str
 ) -> dict[str, Any]:
     """Common raw message fields; 'from' is omitted for a hidden number.
 
@@ -128,7 +128,7 @@ def text_webhook(
     *,
     message_id: str,
     sender_id: str,
-    sender_phone: Optional[str],
+    sender_phone: str | None,
     body: str,
     profile_name: str = "Test User",
     timestamp: str = "1750000000",
@@ -230,7 +230,7 @@ def unrecognized_type_webhook(
     `UnsupportedMessage` that runs one full agent turn via
     `AgentInputBuilder.unsupported()`. This is the case the README's Test
     Matrix "Unsupported message type -> Ignore and return 200" row is
-    actually describing (see tests/outcomes/UNCERTAINTY.md Journey 12).
+    actually describing.
 
     Args:
         message_id: the message's wamid.
@@ -255,7 +255,7 @@ def button_reply_webhook(
     *,
     message_id: str,
     sender_id: str,
-    sender_phone: Optional[str],
+    sender_phone: str | None,
     reply_id: str,
     title: str,
     profile_name: str = "Test User",
@@ -294,7 +294,7 @@ def location_webhook(
     sender_phone: str,
     latitude: float,
     longitude: float,
-    address: Optional[str] = None,
+    address: str | None = None,
     profile_name: str = "Test User",
     timestamp: str = "1750000000",
 ) -> dict[str, Any]:
@@ -329,7 +329,7 @@ def contacts_webhook(
     *,
     message_id: str,
     sender_id: str,
-    sender_phone: Optional[str],
+    sender_phone: str | None,
     origin: str,
     shared_phone: str,
     profile_name: str = "Test User",
@@ -373,7 +373,7 @@ def flow_completion_webhook(
     *,
     message_id: str,
     sender_id: str,
-    sender_phone: Optional[str],
+    sender_phone: str | None,
     response_json: dict[str, Any],
     profile_name: str = "Test User",
     timestamp: str = "1750000000",
@@ -412,7 +412,7 @@ def student_onboarding_completion(
     institution: str = "Delhi Public School",
     institution_id: str = "school-dps-001",
     grade: str = "9",
-    subjects: Optional[list[str]] = None,
+    subjects: list[str] | None = None,
 ) -> dict[str, Any]:
     """The completion payload the student onboarding Flow's terminal screen
     sends.
@@ -443,8 +443,8 @@ def teacher_onboarding_completion(
     *,
     institution: str = "Delhi Public School",
     institution_id: str = "school-dps-001",
-    grades: Optional[list[str]] = None,
-    subjects: Optional[list[str]] = None,
+    grades: list[str] | None = None,
+    subjects: list[str] | None = None,
 ) -> dict[str, Any]:
     """The completion payload the teacher onboarding Flow's terminal screen
     sends.

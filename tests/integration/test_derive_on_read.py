@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import pytest
 
-from infra.attribution import CHANNELS, referral_prefill
-from infra.conversation import ContentMessage, PendingAction
+from infra.attribution import CHANNELS
+from infra.conversation import ContentMessage, HeldConversation
 from infra.firestore.repos.onboarding import OnboardingRepository
 
 from . import constants as K
@@ -22,6 +22,7 @@ from .helpers import (
     campaign_docs,
     click_count,
     forbidden_counters_present,
+    referral_prefill,
     referrer_doc,
     student_profile,
     teacher_profile,
@@ -240,8 +241,7 @@ async def test_influencer_started_moves_with_buffered_onboarding_rows(api, db):
         None.
     """
     handle = await _influencer_with_campaign(api, "startkid")
-    pending = PendingAction(
-        action="select_persona",
+    pending = HeldConversation(
         messages=[
             ContentMessage(
                 type="text",

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Weekly mutation score reporter for the sujho umbrella.
+"""Weekly mutation score reporter for Sujho/platform.
 
 Not a merge gate. A missing mutmut dump or a score drop all exit 0. A drop
 below baseline is flagged for a human on the tracking issue — it does not

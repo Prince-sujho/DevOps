@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Merge the 8 backend repos' full history into a local copy of Sujho/platform.
+"""Merge the 8 backend repos' and docs' full history into a local copy of the
+super-repo (repos.json's super_repo), ready to push to Sujho/platform.
 
 Local only, by construction: every git operation here reads (`clone`,
 `fetch` from a local path) or writes to `--output`, a path this script
 requires the caller to name explicitly. There is no code path that adds
 a remote pointing at GitHub for anything but the initial clone, and
-nothing here ever calls `git push`. See docs/full-repo-merge-plan.md for
-the full procedure this implements and why.
+nothing here ever calls `git push`.
 
 Steps, per repo in repos.json's merge_repos list:
   1. `git clone` it fresh into a scratch directory.

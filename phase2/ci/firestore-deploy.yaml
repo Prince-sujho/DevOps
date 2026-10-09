@@ -1,0 +1,51 @@
+# firestore-deploy.yaml - Firestore rules + index deployment (config-as-code).
+#
+# Steps:
+# 1) Generate firebase.json + firestore.indexes.json from the authored
+#    definitions in infra/firestore/ (constants.py index catalog,
+#    rules.firestore).
+# 2) Deploy deny-all rules + indexes/field overrides via firebase-tools.
+#
+# No image, nothing to promote: this is config, deployed from the same
+# commit to each project in turn by the two calling workflows
+# (firestore-preprod.yaml, firestore-prod.yaml). No git source dependency
+# block: the workflow already has the exact commit checked out and uploads
+# it as real source, same as every other recipe here. Runs as prod-builder,
+# never the old default compute account.
+#
+# Index deploys are non-destructive: they create missing indexes and never
+# auto-delete. prod-builder needs roles/datastore.indexAdmin and
+# roles/firebaserules.admin in both projects (Arnav's side, once this file
+# exists).
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+serviceAccount: projects/${PROJECT_ID}/serviceAccounts/prod-builder@${PROJECT_ID}.iam.gserviceaccount.com
+
+steps:
+  - id: build-firestore-config
+    name: python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        pip install --quiet -e ./infra
+        python -m infra.firestore.build firebase-build
+
+  - id: deploy-firestore
+    name: node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        cd firebase-build
+        npx -y firebase-tools deploy \
+          --only firestore \
+          --project "${PROJECT_ID}" \
+          --non-interactive
+    waitFor: ["build-firestore-config"]
+
+timeout: 600s

@@ -5,11 +5,11 @@
 # Exit codes: none of its own — die() and its error conventions come from
 #   phase1/lib.sh, which must already be sourced.
 #
-# Mutation and eval both run from the sujho umbrella: mutmut via
+# Mutation and eval both run from Sujho/platform: mutmut via
 # tests/ci/pipeline.py, eval via Eval-Suite/run.py. Not a merge gate.
 
-PHASE3_MUTATION_REPOS=(sujho)
-PHASE3_EVAL_REPOS=(sujho)
+PHASE3_MUTATION_REPOS=(platform)
+PHASE3_EVAL_REPOS=(platform)
 
 PHASE3_SKIP_REPOS=(
   admin

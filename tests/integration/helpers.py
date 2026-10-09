@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-from typing import Any, Optional
+from typing import Any
 
 import httpx
+
+from infra.attribution import Platform, prefill
+from infra.attribution.constants import LINK_PREFIXES
 
 from . import constants as K
 
@@ -34,8 +37,8 @@ def student_profile(
     *,
     name: str = "Asha",
     grade: int = 8,
-    subjects: Optional[list[str]] = None,
-    institution_id: Optional[str] = "school-1",
+    subjects: list[str] | None = None,
+    institution_id: str | None = "school-1",
     institution_name: str = "Delhi Public School",
 ) -> dict[str, Any]:
     """Build one student profile request body.
@@ -68,9 +71,9 @@ def teacher_profile(
     phone: str,
     *,
     name: str = "Mr Rao",
-    grades: Optional[list[int]] = None,
-    subjects: Optional[list[str]] = None,
-    institution_id: Optional[str] = "school-1",
+    grades: list[int] | None = None,
+    subjects: list[str] | None = None,
+    institution_id: str | None = "school-1",
     institution_name: str = "Delhi Public School",
 ) -> dict[str, Any]:
     """Build one teacher profile request body.
@@ -99,8 +102,28 @@ def teacher_profile(
     }
 
 
+def referral_prefill(handle: str, platform: Platform | None) -> str:
+    """The WhatsApp opener a referral link for this handle/platform drops
+    into the composer.
+
+    Bound to the product's own prefix table and prefill builder (see
+    infra.attribution.links.prefill) instead of a second hand-written
+    template, so a wording or channel change is automatically visible here.
+
+    Args:
+        handle: the referrer's handle.
+        platform: the channel the link was shared on, or None for the
+            channel-less link.
+    Returns:
+        The prefill text a tap on that link sends.
+    Raises:
+        None.
+    """
+    return prefill(LINK_PREFIXES[platform], handle)
+
+
 def create_user_body(
-    profile: dict[str, Any], pre_onboarding_texts: Optional[list[str]] = None
+    profile: dict[str, Any], pre_onboarding_texts: list[str] | None = None
 ) -> dict[str, Any]:
     """Build a POST /internal/users request body.
 
@@ -122,8 +145,8 @@ def user_message(
     text: str,
     created_at_ms: int,
     *,
-    turn_id: Optional[str] = "turn-1",
-    sequence: Optional[int] = None,
+    turn_id: str | None = "turn-1",
+    sequence: int | None = None,
 ) -> dict[str, Any]:
     """Build one user-role transcript message row.
 
@@ -149,7 +172,7 @@ def user_message(
 
 
 def assistant_message(
-    text: str, created_at_ms: int, *, turn_id: Optional[str] = "turn-1"
+    text: str, created_at_ms: int, *, turn_id: str | None = "turn-1"
 ) -> dict[str, Any]:
     """Build one assistant-role transcript message row.
 
@@ -171,7 +194,7 @@ def assistant_message(
 
 
 def append_body(
-    messages: list[dict[str, Any]], *, started_at_ms: Optional[int] = None
+    messages: list[dict[str, Any]], *, started_at_ms: int | None = None
 ) -> dict[str, Any]:
     """Build a transcript-append request body.
 
@@ -350,7 +373,7 @@ class UsersApi:
         self.headers = {"Authorization": f"Bearer {K.USERS_SERVICE_SECRET}"}
 
     async def post(
-        self, path: str, json: Optional[dict[str, Any]] = None
+        self, path: str, json: dict[str, Any] | None = None
     ) -> httpx.Response:
         """POST path with the bearer auth header.
 
@@ -391,7 +414,7 @@ class UsersApi:
         return await self._client.delete(path, headers=self.headers, **kwargs)
 
     async def put(
-        self, path: str, json: Optional[dict[str, Any]] = None
+        self, path: str, json: dict[str, Any] | None = None
     ) -> httpx.Response:
         """PUT path with the bearer auth header.
 
@@ -406,7 +429,7 @@ class UsersApi:
         return await self._client.put(path, headers=self.headers, json=json)
 
     async def create_user(
-        self, profile: dict[str, Any], texts: Optional[list[str]] = None
+        self, profile: dict[str, Any], texts: list[str] | None = None
     ) -> dict[str, Any]:
         """Create a user via the internal API and return its profile JSON.
 
@@ -430,7 +453,7 @@ class UsersApi:
         user_id: str,
         messages: list[dict[str, Any]],
         *,
-        started_at_ms: Optional[int] = None,
+        started_at_ms: int | None = None,
         thread_key: str = K.WHATSAPP_THREAD_KEY,
     ) -> httpx.Response:
         """Append transcript messages for user_id's thread, raw response.
@@ -456,7 +479,7 @@ class UsersApi:
 # ---------------------------------------------------------------------------
 
 
-async def user_doc(db, user_id: str) -> Optional[dict[str, Any]]:
+async def user_doc(db, user_id: str) -> dict[str, Any] | None:
     """The user's Firestore document, or None if it doesn't exist.
 
     Args:
@@ -504,7 +527,7 @@ async def session_doc(
     user_id: str,
     started_at_ms: int,
     thread_key: str = K.WHATSAPP_THREAD_KEY,
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """One session's Firestore document, or None if it doesn't exist.
 
     Args:
@@ -616,7 +639,7 @@ async def gifting_docs(db, user_id: str) -> list[dict[str, Any]]:
     return docs
 
 
-async def referrer_doc(db, handle: str) -> Optional[dict[str, Any]]:
+async def referrer_doc(db, handle: str) -> dict[str, Any] | None:
     """The referrer's Firestore document, or None if it doesn't exist.
 
     Args:
@@ -667,24 +690,6 @@ async def click_count(db, handle: str) -> int:
         .collection(K.CLICKS_SUBCOLLECTION)
     )
     return len([1 async for _ in ref.stream()])
-
-
-async def enrollment_ids(db) -> list[str]:
-    """Every enrollment document id, sorted.
-
-    Args:
-        db: the Firestore client.
-    Returns:
-        Sorted enrollment ids.
-    Raises:
-        None.
-    """
-    return sorted(
-        [
-            doc.id
-            async for doc in db.collection(K.ENROLLMENTS_COLLECTION).stream()
-        ]
-    )
 
 
 async def blocklist_exists(db, user_id: str) -> bool:

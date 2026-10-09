@@ -20,7 +20,7 @@ jobs:
     runs-on: [self-hosted, mutation]
     timeout-minutes: 720
     steps:
-      # Post-phase0: sujho has no submodules to recurse into (the 8 backend
+      # Post-phase0: platform has no submodules to recurse into (the 8 backend
       # repos are plain subdirectories now, not gitlinks).
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:

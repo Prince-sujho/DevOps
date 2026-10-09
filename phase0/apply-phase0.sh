@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Runs the local-only monorepo merge trial: clone the 8 backend repos,
+# Runs the local-only monorepo merge trial: clone the 8 backend repos and docs,
 # rewrite each into its own subdirectory, merge into a working copy of
-# sujho, drop the 8 gitlinks, collapse every ci/*.yaml's gitSource blocks.
+# sujho (the old super-repo; the result is later pushed to Sujho/platform),
+# drop its gitlinks, collapse every ci/*.yaml's gitSource blocks.
 #
 # Never touches GitHub or GCP except read-only clones of the 9 repos.
 # Nothing is ever pushed — there is no flag that makes this script push.
@@ -32,15 +33,15 @@ cutover_checklist() {
   cat <<'EOF'
 
 BEFORE YOU MERGE THIS ANYWHERE
-  1. Freeze. No merges to the 8 backend repos until step 6. Close or finish
-     open PRs, let running builds finish, and write down each repo's current
-     main SHA — that list is your rollback point.
+  1. Freeze. No merges to the 9 merged repos (8 backends + docs) until step 6.
+     Close or finish open PRs, let running builds finish, and write down each
+     repo's current main SHA — that list is your rollback point.
   2. Know what a history rewrite does not carry over. filter-repo moves
      commits, nothing else: open PRs and issues, tags and GitHub Releases,
      rulesets, Actions secrets/variables, Environments, deploy keys,
      webhooks and per-repo scanning settings all stay behind on the old
      repos. Decide per repo: copy, finish first, or accept losing it.
-  3. Scan the merged history for secrets before it is pushed anywhere. Eight
+  3. Scan the merged history for secrets before it is pushed anywhere. Nine
      histories become one, and a credential deleted years ago is still in
      it. A hit means rotate that credential — do not push and hope.
   4. Read the drift report below. DRIFT means that repo's tip is ahead of the
@@ -53,10 +54,10 @@ BEFORE YOU MERGE THIS ANYWHERE
 AFTER IT IS MERGED
   6. Repoint everything that still points at the old repos: Cloud Build
      triggers, Developer Connect links, submodule references in www /
-     design_system / docs, and any script or doc that clones one of the 8 by
+     design_system, and any script or doc that clones one of the 9 by
      URL. Tell the team to re-clone.
   7. Run ./verify-phase0.sh --output DIR --remote.
-  8. Archive the 8 old repos — do not delete them. Archiving is reversible
+  8. Archive the 9 old repos — do not delete them. Archiving is reversible
      and deleting is not; leave them archived for at least a quarter.
   9. Lift the freeze.
 

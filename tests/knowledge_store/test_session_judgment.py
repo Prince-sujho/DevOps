@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from infra.clients.users import SessionExtraction, SessionHeader
-from infra.knowledge.ids import session_id
+from infra.utils.ids import session_id
 from infra.knowledge.writer import decorate_session
 
 from .conftest import node_props

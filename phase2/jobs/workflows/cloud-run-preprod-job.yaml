@@ -137,7 +137,7 @@ jobs:
         run: |
           set -euo pipefail
           SHORT="$(printf '%s' "$SHA" | cut -c1-12)"
-          eval "$(python3 jobs/scripts/lookup_job.py --id "$JOB_ID")"
+          eval "$(python3 jobs/scripts/lookup_job.py --id "$JOB_ID" --env preprod)"
 
           # one quoted string: values with spaces stay one substitution
           SUBS="_JOB_ID=$JOB_ID"
@@ -153,8 +153,10 @@ jobs:
           SUBS+=",_MAX_RETRIES=$MAX_RETRIES"
           SUBS+=",_ENTRY_FILE=$ENTRY_FILE"
           SUBS+=",_ENTRY_MODULE=$ENTRY_MODULE"
+          SUBS+=",_ENTRY_ARGS=$ENTRY_ARGS"
           SUBS+=",_SCHEDULE=$SCHEDULE"
           SUBS+=",_NEEDS_ENTRY_ID=$NEEDS_ENTRY_ID"
+          SUBS+=",_ENV_VARS=$ENV_VARS"
           SUBS+=",_COMMIT_SHA=$SHA"
           SUBS+=",_SHORT_SHA=$SHORT"
           SUBS+=",_BASELINE_SHA=$BASELINE"
@@ -180,7 +182,7 @@ jobs:
           ENTRY_ID: ${{ inputs.entry_id }}
         run: |
           set -euo pipefail
-          eval "$(python3 jobs/scripts/lookup_job.py --id "$JOB_ID")"
+          eval "$(python3 jobs/scripts/lookup_job.py --id "$JOB_ID" --env preprod)"
           if [ "$NEEDS_ENTRY_ID" = "1" ]; then
             if [ -z "$ENTRY_ID" ]; then
               echo "this job needs entry_id to execute"
@@ -194,9 +196,15 @@ jobs:
               echo "[A-Za-z0-9_.:-] — no commas, spaces or shell characters."
               exit 1
             fi
+            # execute replaces the template args, so the verb has to be here
+            # too. parse_job_args reads the verb, then the entry id.
+            RUN_ARGS="-m,$ENTRY_MODULE"
+            if [ -n "$ENTRY_ARGS" ]; then
+              RUN_ARGS="$RUN_ARGS,$(printf '%s' "$ENTRY_ARGS" | tr ';' ',')"
+            fi
             gcloud run jobs execute "$JOB_ID" \
               --project="$PROJECT" --region=asia-south1 \
-              --args="-m,$ENTRY_MODULE,$ENTRY_ID" --wait
+              --args="$RUN_ARGS,$ENTRY_ID" --wait
           else
             gcloud run jobs execute "$JOB_ID" \
               --project="$PROJECT" --region=asia-south1 --wait

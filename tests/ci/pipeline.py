@@ -53,16 +53,16 @@ ALL_STAGES = DEFAULT_STAGES + ("integration", "e2e")
 STAGE_FOLDERS = {
     "install": "(pip: service + test requirements)",
     "install-mutation": "(pip: mutmut + user_service unit deps)",
-    "static": "(ruff + mypy; product tree)",
-    "secrets": "(.secrets.baseline at workspace root)",
+    "static": "(ruff + ci/gates/mypy_ratchet.py --absolute; product tree)",
+    "secrets": "(tests/ci/.secrets.baseline)",
     "unit": "tests/unit/",
     "api": "tests/api/",
-    "eval-checks": "Eval-Suite/tests/ (grader + corpus gate; no live model)",
+    "eval-checks": "Eval-Suite/tests/ (grader + corpus gate; no live model; "
+    "skipped when Eval-Suite is not in the checkout)",
     "integration": "tests/integration/",
     "e2e": "tests/e2e/",
-    "gates": "tests/tooling/ (markers, assertions, collected-test count, mypy "
-    "ratchet)",
-    "coverage": "tests/unit/ + tests/api/ (whole-product floors)",
+    "gates": "tests/tooling/ (assertions, collected-test count)",
+    "coverage": "tests/unit/ + tests/api/ (pyproject fail_under floor)",
     "diff-cover": "(PR changed-line gate; needs coverage.xml)",
     "mutation": "mutmut run + export (scripts/mutation_report.py scores it)",
 }
@@ -228,14 +228,18 @@ def stage_static(workspace: Path, _args: argparse.Namespace) -> int:
     Raises:
         None.
     """
-    # Bare "ruff"/"mypy" rely on PATH; in this checkout they live only in
-    # .venv/bin, so invoking them as `python -m` finds them regardless of
-    # shell PATH state.
+    # Bare "ruff"/"mypy" rely on PATH; invoking ruff as `python -m` finds it
+    # regardless of shell PATH state. There is no baseline locally, so mypy
+    # runs in the gate's absolute mode, the same as a first deploy.
     code = _run([sys.executable, "-m", "ruff", "check", "."], cwd=workspace)
     if code:
         return code
     return _run(
-        [sys.executable, str(TESTS_ROOT / "tooling" / "check_mypy.py")],
+        [
+            sys.executable,
+            str(workspace / "ci" / "gates" / "mypy_ratchet.py"),
+            "--absolute",
+        ],
         cwd=workspace,
     )
 
@@ -295,7 +299,7 @@ def stage_secrets(workspace: Path, _args: argparse.Namespace) -> int:
     Raises:
         None.
     """
-    baseline = workspace / ".secrets.baseline"
+    baseline = TESTS_ROOT / "ci" / ".secrets.baseline"
     if not baseline.is_file():
         print(f"FAIL: {baseline} is missing", flush=True)
         return 1
@@ -348,14 +352,20 @@ def stage_api(workspace: Path, _args: argparse.Namespace) -> int:
 def stage_eval_checks(workspace: Path, _args: argparse.Namespace) -> int:
     """Run the eval grader + corpus gate tests (no live model).
 
+    Eval-Suite is not shipped to every checkout (phase 3 is off), so a
+    checkout without it skips this stage instead of failing it.
+
     Args:
         workspace: the product checkout to run in.
         _args: parsed CLI args; unused here, kept for STAGES' uniform signature.
     Returns:
-        The stage's exit code (0 on success).
+        The stage's exit code (0 on success or skipped).
     Raises:
         None.
     """
+    if not (workspace / "Eval-Suite" / "tests").is_dir():
+        print("eval-checks: no Eval-Suite/tests in this checkout; skipped.")
+        return 0
     return _pytest("Eval-Suite/tests", "-q", cwd=workspace)
 
 
@@ -388,8 +398,7 @@ def stage_e2e(workspace: Path, _args: argparse.Namespace) -> int:
 
 
 def stage_gates(workspace: Path, _args: argparse.Namespace) -> int:
-    """Run the marker, assertion, count, and mypy-ratchet gates in
-    tests/tooling.
+    """Run the assertion and collected-test-count gates in tests/tooling.
 
     Args:
         workspace: the product checkout to run in.
@@ -401,10 +410,8 @@ def stage_gates(workspace: Path, _args: argparse.Namespace) -> int:
     """
     tooling = TESTS_ROOT / "tooling"
     for name in (
-        "check_test_methods.py",
         "check_assertions.py",
         "check_test_count.py",
-        "check_mypy.py",
     ):
         code = _run([sys.executable, str(tooling / name)], cwd=workspace)
         if code:
@@ -413,7 +420,8 @@ def stage_gates(workspace: Path, _args: argparse.Namespace) -> int:
 
 
 def stage_coverage(workspace: Path, _args: argparse.Namespace) -> int:
-    """Run unit + api with coverage reports, then check the coverage floor.
+    """Run unit + api with coverage reports; the floor is pyproject's
+    [tool.coverage.report] fail_under, enforced by pytest-cov.
 
     Args:
         workspace: the product checkout to run in.
@@ -423,7 +431,7 @@ def stage_coverage(workspace: Path, _args: argparse.Namespace) -> int:
     Raises:
         None.
     """
-    pytest_code = _pytest(
+    return _pytest(
         "tests/unit",
         "tests/api",
         "-c",
@@ -435,11 +443,6 @@ def stage_coverage(workspace: Path, _args: argparse.Namespace) -> int:
         ),
         cwd=workspace,
     )
-    floor_code = _run(
-        [sys.executable, str(TESTS_ROOT / "tooling" / "check_coverage.py")],
-        cwd=workspace,
-    )
-    return floor_code or pytest_code
 
 
 def _diff_cover_refusal(
@@ -571,23 +574,10 @@ def _print_list() -> None:
     print("tests/ layout")
     print(f"  {TESTS_ROOT}/")
     print("    unit/ api/ integration/ e2e/   runnable pytest suites")
-    print(
-        "    tooling/                       marker, assertion, count, "
-        "coverage-floor gates"
-    )
-    print(
-        "    outcomes/                      audits, findings, pytest + "
-        "mutation snapshots"
-    )
+    print("    tooling/                       assertion and test-count gates")
+    print("    outcomes/                      pytest collected-test baseline")
     print("    ci/pipeline.py                 this runner")
-    print(
-        "    ci/github/                     copies of umbrella GitHub Actions "
-        "workflows"
-    )
-    print(
-        "    ci/pyproject.toml              copy of umbrella "
-        "mutmut/coverage/ruff/mypy"
-    )
+    print("    ci/.secrets.baseline           detect-secrets baseline")
     print()
     print("stages")
     width = max(len(name) for name in STAGES)

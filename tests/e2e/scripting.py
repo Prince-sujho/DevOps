@@ -3,9 +3,9 @@ state."""
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
-from infra.conversation import OutboundMessage, TextMessage
+from infra.conversation import AgentMessage, ReactionEmoji, TextMessage
 from infra.llm.oai.types.messages import AssistantMessage
 from infra.llm.oai.types.responses import LlmResponse, Speech
 
@@ -15,8 +15,8 @@ from . import constants as K
 def turn(
     *,
     response_id: str,
-    messages: Optional[list[OutboundMessage]] = None,
-    reaction: Optional[str] = None,
+    messages: list[AgentMessage] | None = None,
+    reaction: ReactionEmoji | None = None,
 ) -> Speech[LlmResponse]:
     """Build one scripted completed model turn: no tool rounds, straight to
     speech.
@@ -38,6 +38,7 @@ def turn(
     return Speech(
         responseId=response_id,
         items=[],
+        usage=[],
         parsed=LlmResponse(reaction=reaction, messages=outbound),
         message=AssistantMessage(text=speech_text),
         web=[],
@@ -73,10 +74,10 @@ def citations_responder(records: list[dict[str, Any]]):
     `state.read_ids` even when that list is empty (no tool call performed a
     read this turn). Returning `records` for an empty `ids` list would script
     retrieval the turn never actually performed -- exactly the harness gap
-    flagged in tests/outcomes/UNCERTAINTY.md ("real citation content depends on
-    tool-driven reads, which no journey in this suite exercises"). This fake now
-    matches that: empty ids -> no rows -> no citations -> no Sources footer,
-    honestly reflecting that this suite never drives a real read.
+    ("real citation content depends on tool-driven reads, which no journey in
+    this suite exercises"). This fake now matches that: empty ids -> no rows ->
+    no citations -> no Sources footer, honestly reflecting that this suite
+    never drives a real read.
 
     Args:
         records: the citation rows to return when ids are actually requested.
@@ -107,10 +108,10 @@ def student_profile_input(
     *,
     phone: str,
     name: str = "Test Student",
-    institution_id: Optional[str] = "school-dps-001",
+    institution_id: str | None = "school-dps-001",
     institution_name: str = "Delhi Public School",
     grade: int = 9,
-    subjects: Optional[list[str]] = None,
+    subjects: list[str] | None = None,
 ) -> dict[str, Any]:
     """A UserProfileInput body for a student.
 
@@ -142,10 +143,10 @@ def teacher_profile_input(
     *,
     phone: str,
     name: str = "Test Teacher",
-    institution_id: Optional[str] = "school-dps-001",
+    institution_id: str | None = "school-dps-001",
     institution_name: str = "Delhi Public School",
-    grades: Optional[list[int]] = None,
-    subjects: Optional[list[str]] = None,
+    grades: list[int] | None = None,
+    subjects: list[str] | None = None,
 ) -> dict[str, Any]:
     """A UserProfileInput body for a teacher.
 
@@ -174,7 +175,7 @@ def teacher_profile_input(
 
 
 async def create_user(
-    users_api, profile: dict[str, Any], texts: Optional[list[str]] = None
+    users_api, profile: dict[str, Any], texts: list[str] | None = None
 ):
     """Create one onboarded user through user_service's real internal route.
 
@@ -215,9 +216,9 @@ async def append_transcript(
     user_id: str,
     rows: list[dict[str, Any]],
     *,
-    previous_response_id: Optional[str] = None,
-    started_at_ms: Optional[int] = None,
-    read_ids: Optional[list[str]] = None,
+    previous_response_id: str | None = None,
+    started_at_ms: int | None = None,
+    read_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     """Append transcript rows through user_service's real transcript route.
 

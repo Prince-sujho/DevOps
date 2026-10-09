@@ -6,12 +6,12 @@ name: Rollback Cloud Run service (Prod)
 # Empty revision = whatever the service's own `prev` tag records as the last
 # known good revision before the current deploy.
 #
-# `environment: production-rollback` — a Lead must be the one who runs/approves
-# it, and GCP trusts only that OIDC subject for the prod rollback account
-# (repo:Sujho/platform:environment:production-rollback). Unlike `production`,
-# self-review stays allowed there: in an incident the Lead who starts the
-# rollback can approve it alone, but it is still a named, logged Lead action
-# and nobody outside the reviewer list can do it.
+# `environment: production-rollback` — a Lead must be the one who runs it:
+# Google only accepts a production-rollback run that a Lead started, and GCP
+# trusts only that OIDC subject for the prod rollback account
+# (repo:Sujho/platform:environment:production-rollback). There is no approval
+# pause, so in an incident the Lead who starts the rollback is the whole
+# gate; it is still a named, logged Lead action and nobody else can do it.
 
 on:
   workflow_dispatch:

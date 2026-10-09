@@ -10,9 +10,7 @@ from typing import Final
 
 # The README calls the tier ladder and reward catalogue "a frozen commitment
 # in code" but names no numbers itself -- import the real constants instead
-# of re-transcribing a second, independently-maintained copy of the ladder
-# (see tests/outcomes/MIRRORED_AND_WRONG.md).
-from infra.clients.users import SESSION_GAP_MS
+# of re-transcribing a second, independently-maintained copy of the ladder.
 from user_service.app.src.constants import AMBASSADOR_TIERS, REWARD_PRODUCTS
 
 # Canned user-facing copy and onboarding wiring ids/screens: bound to the
@@ -20,25 +18,16 @@ from user_service.app.src.constants import AMBASSADOR_TIERS, REWARD_PRODUCTS
 # wiring-id change is automatically visible here instead of silently going
 # stale (same rationale as the reward ladder above).
 from infra.canned import CANNED_RESPONSES
-from infra.constants import PRODUCT_NAME
-from infra.conversation import SOURCES_LABEL
 from infra.firestore.collections import (
-    BLOCKLIST_COLLECTION,
-    GIFTING_SUBCOLLECTION,
-    MESSAGE_CLAIMS_COLLECTION,
-    ONBOARDING_COLLECTION,
-    REFERRERS_COLLECTION,
-    SESSION_TRANSCRIPT_SUBCOLLECTION,
-    SESSIONS_SUBCOLLECTION,
-    THREADS_SUBCOLLECTION,
-    USERS_COLLECTION,
+    MESSAGE_CLAIMS_COLLECTION as MESSAGE_CLAIMS_COLLECTION,
+    ONBOARDING_COLLECTION as ONBOARDING_COLLECTION,
+    SESSIONS_SUBCOLLECTION as SESSIONS_SUBCOLLECTION,
+    SESSION_TRANSCRIPT_SUBCOLLECTION as SESSION_TRANSCRIPT_SUBCOLLECTION,
+    THREADS_SUBCOLLECTION as THREADS_SUBCOLLECTION,
+    USERS_COLLECTION as USERS_COLLECTION,
 )
-from whatsapp_adapter.app.src.constants import ONBOARDING_FLOW_TOKEN
-from whatsapp_adapter.app.src.flows.constants import (
-    DOCUMENT_FORM_SCREEN,
-    PERSONA_STUDENT_BUTTON_ID,
-    PERSONA_TEACHER_BUTTON_ID,
-    RESULTS_SCREEN,
+from whatsapp_adapter.app.src.constants import (
+    ONBOARDING_FLOW_TOKEN as ONBOARDING_FLOW_TOKEN,
 )
 
 TEST_PROJECT: Final[str] = "sujho-e2e-test"
@@ -51,9 +40,10 @@ TEXT_AGENT_SERVICE_SECRET: Final[str] = "test-text-agent-service-secret"
 USERS_SERVICE_SECRET: Final[str] = "test-users-service-secret"
 USERS_USER_ID_HMAC_SECRET: Final[str] = "test-users-user-id-hmac-secret"
 
-# --- Distinct persona flow ids so persona resolution is observable ---
-STUDENT_ONBOARDING_FLOW_ID: Final[str] = "flow-student-onboarding"
-TEACHER_ONBOARDING_FLOW_ID: Final[str] = "flow-teacher-onboarding"
+# --- Flow ids: onboarding and roster are shared/teacher-only; doc and grade are
+# distinct per persona so persona resolution is observable ---
+ONBOARDING_FLOW_ID: Final[str] = "flow-onboarding"
+ROSTER_FLOW_ID: Final[str] = "flow-roster"
 STUDENT_DOC_FLOW_ID: Final[str] = "flow-student-doc"
 TEACHER_DOC_FLOW_ID: Final[str] = "flow-teacher-doc"
 STUDENT_GRADE_FLOW_ID: Final[str] = "flow-student-grade"
@@ -73,20 +63,12 @@ CONVERSATION_MEDIA_BUCKET: Final[str] = "sujho-e2e-test-media"
 _ONBOARDING_COPY = CANNED_RESPONSES.onboarding
 CANNED_ERROR: Final[str] = CANNED_RESPONSES.error
 CANNED_BLOCKED: Final[str] = CANNED_RESPONSES.blocked
-PERSONA_QUESTION: Final[str] = _ONBOARDING_COPY.persona_question
 PHONE_REQUEST: Final[str] = _ONBOARDING_COPY.phone_request
 PHONE_ACK: Final[str] = _ONBOARDING_COPY.phone_ack
 INTRO: Final[str] = _ONBOARDING_COPY.intro
-STUDENT_LAUNCH_BODY: Final[str] = _ONBOARDING_COPY.launch_body["student"]
-TEACHER_LAUNCH_BODY: Final[str] = _ONBOARDING_COPY.launch_body["teacher"]
+LAUNCH_BODY: Final[str] = _ONBOARDING_COPY.launch_body
 ONBOARDING_FLOW_CTA: Final[str] = CANNED_RESPONSES.flow_cta["onboarding"]
 DOCUMENT_FLOW_CTA: Final[str] = CANNED_RESPONSES.flow_cta["document"]
-PERSONA_STUDENT_BUTTON_TITLE: Final[str] = (
-    _ONBOARDING_COPY.persona_button_titles["student"]
-)
-PERSONA_TEACHER_BUTTON_TITLE: Final[str] = (
-    _ONBOARDING_COPY.persona_button_titles["teacher"]
-)
 
 WHATSAPP_THREAD_KEY: Final[str] = "whatsapp"
 

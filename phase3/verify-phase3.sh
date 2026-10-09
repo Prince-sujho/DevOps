@@ -8,7 +8,7 @@
 usage() {
   cat <<'EOF'
   ./verify-phase3.sh           # validate.py only
-  ./verify-phase3.sh --remote  # workflows on sujho/main; must not be required checks
+  ./verify-phase3.sh --remote  # workflows on platform/main; must not be required checks
 EOF
 }
 
@@ -36,7 +36,7 @@ fi
 
 fail=0
 
-echo "--- mutation workflow on sujho ---"
+echo "--- mutation workflow on platform ---"
 for REPO in "${PHASE3_MUTATION_REPOS[@]}"; do
   wf="$(
     gh api "repos/${ORG}/${REPO}/contents/${PHASE3_MUTATION_WORKFLOW}?ref=main" \
@@ -50,7 +50,7 @@ for REPO in "${PHASE3_MUTATION_REPOS[@]}"; do
   fi
 done
 
-echo "--- eval on sujho (Eval-Suite) ---"
+echo "--- eval on platform (Eval-Suite) ---"
 for REPO in "${PHASE3_EVAL_REPOS[@]}"; do
   wf="$(
     gh api "repos/${ORG}/${REPO}/contents/${PHASE3_EVAL_WORKFLOW}?ref=main" \

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Derives a job's build/deploy fields from its id — no per-job manifest file.
-e.g. knowledge-store-import-ncert -> group knowledge-store, verb import-ncert,
-entry knowledge_store/jobs/import_ncert.py. Unset fields fall back to the
-group's.
+"""Derives a job's build/deploy fields from catalog.jobs.json.
+
+The image, the entry module, and the runtime account come from the job's
+explicit group. The arguments the module reads come from the job's explicit
+args list. Nothing is sliced out of the job id.
 """
 
 from __future__ import annotations
@@ -34,46 +35,115 @@ def find_job(job_id: str) -> dict:
     sys.exit(1)
 
 
-def find_group_name(job_id: str) -> str:
-    """The longest image_group name job_id is prefixed by, or exit 1 if none
-    match.
+def find_group_name(job: dict) -> str:
+    """The job's explicit "group" field, validated against image_groups.
 
     Args:
-        job_id: catalog job id whose image-group prefix is resolved.
+        job: the catalog job entry.
     Returns:
-        The longest matching image-group name.
+        The job's group name.
     Raises:
-        SystemExit: job_id matches no image_group prefix.
+        SystemExit: the job has no "group" field, or it names no real
+            image_group.
     """
-    # longest match wins, avoids a shorter group name matching as a false prefix
-    candidates = [
-        name
-        for name in CATALOG["image_groups"]
-        if job_id == name or job_id.startswith(name + "-")
-    ]
-    if not candidates:
-        print(f"error: {job_id} matches no image_group prefix", file=sys.stderr)
+    group_name = job.get("group")
+    if not group_name:
+        print(
+            f'error: {job["id"]} has no "group" field in catalog.jobs.json',
+            file=sys.stderr,
+        )
         sys.exit(1)
-    return max(candidates, key=len)
+    if group_name not in CATALOG["image_groups"]:
+        print(
+            f"error: {job['id']}'s group {group_name!r} is not in image_groups",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return group_name
 
 
-def _entry_paths(job_id: str, group_name: str) -> tuple[str, str, str]:
-    """Package name, entry file, and entry module derived from a job id.
+def _package_name(group_name: str) -> str:
+    """Package directory for an image group.
 
     Args:
-        job_id: catalog job id.
-        group_name: the image_group name job belongs to.
+        group_name: the explicit image_group name.
     Returns:
-        (package, entry_file, entry_module).
+        group_name with hyphens turned into underscores, matching the
+        package directory on the uploaded tree (knowledge-store ->
+        knowledge_store).
     Raises:
         None.
     """
-    verb = job_id[len(group_name) + 1 :] if job_id != group_name else ""
-    package = group_name.replace("-", "_")
-    verb_module = verb.replace("-", "_")
-    entry_file = f"{package}/jobs/{verb_module}.py"
-    entry_module = f"{package}.jobs.{verb_module}"
-    return package, entry_file, entry_module
+    return group_name.replace("-", "_")
+
+
+def require_entry(group_name: str, group: dict) -> tuple[str, str]:
+    """The group's entry module and file. Both are required, and the file
+    path must be the module path.
+
+    Args:
+        group_name: the image_group name, used only in the error.
+        group: the catalog image_group entry.
+    Returns:
+        (entry_file, entry_module).
+    Raises:
+        SystemExit: entry_module or entry_file is missing, or the file path
+            is not the module path with dots turned into slashes.
+    """
+    entry_module = group.get("entry_module") or ""
+    entry_file = group.get("entry_file") or ""
+    if not entry_module or not entry_file:
+        print(
+            f'error: image group {group_name!r} needs "entry_module" and '
+            '"entry_file" in catalog.jobs.json',
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    expected = entry_module.replace(".", "/") + ".py"
+    if entry_file != expected:
+        print(
+            f"error: image group {group_name!r} entry_file {entry_file!r} "
+            f"does not match entry_module {entry_module!r} (expected {expected})",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return entry_file, entry_module
+
+
+def require_args(job: dict) -> str:
+    """The job's container arguments after the module, ';'-separated so a
+    Cloud Build substitution can carry them.
+
+    Args:
+        job: the catalog job entry.
+    Returns:
+        ';'-joined args. An empty list is valid and returns "".
+    Raises:
+        SystemExit: the job has no "args" field, or an arg is empty or
+            contains ',' or ';' (those split substitutions and gcloud --args).
+    """
+    if "args" not in job:
+        print(
+            f'error: {job["id"]} has no "args" field in catalog.jobs.json',
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    args = job["args"]
+    if not isinstance(args, list):
+        print(
+            f'error: {job["id"]} "args" must be a list',
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    for arg in args:
+        if not isinstance(arg, str) or not arg or "," in arg or ";" in arg:
+            print(
+                f'error: {job["id"]} has an args entry that is empty or '
+                "contains ',' or ';'",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+    return ";".join(args)
 
 
 def _resource_fields(job: dict, group: dict) -> dict[str, str]:
@@ -100,7 +170,27 @@ def _resource_fields(job: dict, group: dict) -> dict[str, str]:
     }
 
 
-def resolve_fields(job: dict, group_name: str, group: dict) -> dict:
+def _resolve_env(job: dict, env: str) -> str:
+    """This job's env vars for one environment, ';'-separated, same shape as
+    services.json's env/overrides.
+
+    Args:
+        job: the catalog job entry.
+        env: "preprod" or "prod".
+    Returns:
+        ';'-joined KEY=value entries; the environment's override replaces the
+        job's base list entirely, it does not merge with it.
+    Raises:
+        None.
+    """
+    base = list(job.get("env", []))
+    override = job.get("overrides", {}).get(env, {}).get("env")
+    if override is not None:
+        base = override
+    return ";".join(base)
+
+
+def resolve_fields(job: dict, group_name: str, group: dict, env: str) -> dict:
     """Derive every build/deploy field for one job from its id, group, and
     overrides.
 
@@ -108,24 +198,27 @@ def resolve_fields(job: dict, group_name: str, group: dict) -> dict:
         job: the catalog job entry (may override cpu/memory/tasks/etc).
         group_name: the image_group name job belongs to.
         group: the catalog image_group entry (image/dockerfile/defaults).
+        env: "preprod" or "prod" — which overrides block applies.
     Returns:
         Every SHELL_VAR=value field this job's deploy step needs.
     Raises:
         None.
     """
-    package, entry_file, entry_module = _entry_paths(job["id"], group_name)
+    entry_file, entry_module = require_entry(group_name, group)
     return {
         "JOB_ID": job["id"],
         "IMAGE_GROUP": group_name,
         "IMAGE": group["image"],
         "DOCKERFILE": group["dockerfile"],
-        "PACKAGE": package,
+        "PACKAGE": _package_name(group_name),
         "RUNTIME_SA": group["runtime_sa"],
         "ENTRY_FILE": entry_file,
         "ENTRY_MODULE": entry_module,
+        "ENTRY_ARGS": require_args(job),
         **_resource_fields(job, group),
         "NEEDS_ENTRY_ID": "1" if job.get("needs_entry_id", False) else "0",
         "SCHEDULE": job.get("schedule", ""),
+        "ENV_VARS": _resolve_env(job, env),
         "REGISTRY": CATALOG["registry"],
         "REGION": CATALOG["region"],
     }
@@ -143,13 +236,14 @@ def main() -> int:
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("--id", required=True)
+    parser.add_argument("--env", choices=("preprod", "prod"), required=True)
     parser.add_argument("--format", choices=("shell", "json"), default="shell")
     args = parser.parse_args()
 
     job = find_job(args.id)
-    group_name = find_group_name(job["id"])
+    group_name = find_group_name(job)
     group = CATALOG["image_groups"][group_name]
-    out = resolve_fields(job, group_name, group)
+    out = resolve_fields(job, group_name, group, args.env)
 
     if args.format == "json":
         json.dump(out, sys.stdout, indent=2)

@@ -37,7 +37,7 @@ import threading
 import time
 from contextlib import asynccontextmanager
 from functools import partial
-from typing import Iterator
+from collections.abc import Iterator
 
 import httpx
 import pytest
@@ -49,13 +49,11 @@ from google.cloud.firestore import AsyncClient
 from infra.firestore.repos.blocklist import BlocklistRepository
 from infra.firestore.repos.campaigns import CampaignsRepository
 from infra.firestore.repos.clicks import ClicksRepository
-from infra.firestore.repos.enrollments import EnrollmentsRepository
 from infra.firestore.repos.gifting import GiftingRepository
 from infra.firestore.repos.onboarding import OnboardingRepository
 from infra.firestore.repos.referrers import ReferrersRepository
 from infra.firestore.repos.threads import ThreadsRepository
 from infra.firestore.repos.users import UsersRepository
-from infra.firestore import firestore_client
 from infra.hubble import HubbleClient
 from infra.platform.gcp import GcpIdentity
 from user_service.app.src.access import AccessResolver
@@ -396,7 +394,6 @@ async def _build_app_state(
         db=db,
         settings=settings,
         users=users,
-        enrollments=EnrollmentsRepository(db),
         threads=ThreadsRepository(db),
         referrers=ReferrersRepository(db),
         clicks=ClicksRepository(db),

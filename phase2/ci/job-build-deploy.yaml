@@ -19,6 +19,8 @@ substitutions:
   _MAX_RETRIES: "0"
   _ENTRY_FILE: ""
   _ENTRY_MODULE: ""
+  # ';'-separated container args after the module (the verb). Empty for probe.
+  _ENTRY_ARGS: ""
   _SCHEDULE: ""
   _COMMIT_SHA: ""
   _SHORT_SHA: ""
@@ -30,6 +32,8 @@ substitutions:
   # only for a first deploy, or to re-baseline on purpose; empty = read it off
   # the deployed job (resolve_baseline.py)
   _BASELINE_SHA: ""
+  # ';'-separated, converted to ',' below, same as services.json's env
+  _ENV_VARS: ""
 
 serviceAccount: projects/sujho-preprod/serviceAccounts/prod-builder@sujho-preprod.iam.gserviceaccount.com
 
@@ -46,7 +50,7 @@ steps:
       - |
         set -euo pipefail
         if [ ! -f "${_ENTRY_FILE}" ]; then
-          echo "Refuse: no such job entry point at ${_ENTRY_FILE} (derived from ${_JOB_ID})"
+          echo "Refuse: no such job entry point at ${_ENTRY_FILE} (catalog entry for ${_JOB_ID})"
           exit 1
         fi
         echo "ok: ${_ENTRY_FILE} exists, runs as python -m ${_ENTRY_MODULE}"
@@ -77,9 +81,9 @@ steps:
         git cat-file -e "$$BASE_SHA^{commit}"
         echo "$$BASE_SHA" > /workspace/.baseline_sha
         echo "baseline commit: $$BASE_SHA"
-        # The mypy ratchet must count the same tree on both sides: the baseline
-        # commit's own worktree, just as HEAD has it. Built on a volume, not in
-        # /workspace, so ruff/mypy/semgrep on HEAD never scan it.
+        # The ruff and mypy ratchets must count the same tree on both sides: the
+        # baseline commit's own worktree, just as HEAD has it. Built on a volume,
+        # not in /workspace, so ruff/mypy/semgrep on HEAD never scan it.
         git worktree add --detach /baseline "$$BASE_SHA"
     volumes:
       - name: baseline
@@ -96,14 +100,16 @@ steps:
         set -euo pipefail
         apt-get update -qq && apt-get install -y -qq git >/dev/null
         pip install --quiet ruff==0.6.9 mypy==1.11.2 semgrep==1.86.0 detect-secrets==1.5.0
-        ruff check .
         BASE_SHA="$(cat /workspace/.baseline_sha)"
         if [ -n "$$BASE_SHA" ]; then
+          python3 ci/gates/ruff_ratchet.py \
+            --baseline-sha "$$BASE_SHA" --baseline-root /baseline
           python3 ci/gates/mypy_ratchet.py \
             --baseline-sha "$$BASE_SHA" --baseline-root /baseline
           semgrep scan --config=p/ci --error --baseline-commit "$$BASE_SHA"
         else
           echo "first deploy: no baseline, absolute mode (every finding fails)"
+          python3 ci/gates/ruff_ratchet.py --absolute
           python3 ci/gates/mypy_ratchet.py --absolute
           semgrep scan --config=p/ci --error
         fi
@@ -113,11 +119,10 @@ steps:
         path: /baseline
     waitFor: ["check-entry-file-exists", "resolve-baseline"]
 
-  # knowledge_store's 9 pure-logic tests run here (verified passing). Its
-  # other 10 (real Neo4j via Docker) are verified passing locally too, but
-  # not run here: this container has no Docker daemon reachable. A future
-  # non-knowledge_store job falls through to the honest "no tests yet" line
-  # below, rather than silently skipping.
+  # No job-specific invariant tests exist: the old knowledge_store pure-logic
+  # tests are gone, and tests/knowledge_store needs Docker, which this container
+  # does not have. The step stays so the gate order matches build-deploy.yaml,
+  # and says so out loud rather than silently skipping.
   - id: gate-2-invariants
     name: python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
     entrypoint: bash
@@ -125,17 +130,7 @@ steps:
       - -c
       - |
         set -euo pipefail
-        if [ "${_PACKAGE}" = "knowledge_store" ]; then
-          pip install --quiet -e ./infra -r tests/requirements.txt \
-            -r knowledge_store/requirements.txt
-          # whole directory, not a hand-picked file list — a new test file
-          # under tests/unit/knowledge_store must run here automatically
-          pytest -q \
-            tests/unit/infra/test_catalog_job_args.py \
-            tests/unit/knowledge_store
-        else
-          echo "no invariant tests exist for this job's package yet — known gap, not run"
-        fi
+        echo "no invariant tests exist for this job's package yet — known gap, not run"
     waitFor: ["gate-1-static"]
 
   # check_test_count runs `pytest --collect-only` over every suite: a fresh
@@ -177,14 +172,26 @@ steps:
       - |
         set -euo pipefail
         DIGEST="$(cat /workspace/.digest)"
+        ENV_ARG="RELEASE_COMMIT_SHA=${_COMMIT_SHA},GOOGLE_CLOUD_PROJECT=${_TARGET_PROJECT},GOOGLE_CLOUD_LOCATION=${_REGION}"
+        EXTRA_ENV="$(printf '%s' "${_ENV_VARS}" | tr ';' ',')"
+        if [ -n "$$EXTRA_ENV" ]; then
+          ENV_ARG="$${ENV_ARG},$${EXTRA_ENV}"
+        fi
+        # The module's own arguments (the verb) are part of the job template.
+        # prove-run and Cloud Scheduler execute that template with no override.
+        ENTRY_ARGS="$(printf '%s' "${_ENTRY_ARGS}" | tr ';' ',')"
+        RUN_ARGS="-m,${_ENTRY_MODULE}"
+        if [ -n "$$ENTRY_ARGS" ]; then
+          RUN_ARGS="$${RUN_ARGS},$${ENTRY_ARGS}"
+        fi
         gcloud run jobs deploy "${_JOB_ID}" \
           --project="${_TARGET_PROJECT}" --region="${_REGION}" \
           --image="${_REGISTRY}/${_IMAGE}@$${DIGEST}" \
-          --command=python3 --args="-m,${_ENTRY_MODULE}" \
+          --command=python3 --args="$${RUN_ARGS}" \
           --cpu="${_CPU}" --memory="${_MEMORY}" --task-timeout="${_TASK_TIMEOUT}" \
           --tasks="${_TASKS}" --parallelism="${_PARALLELISM}" --max-retries="${_MAX_RETRIES}" \
           --service-account="${_RUNTIME_SA}@${_TARGET_PROJECT}.iam.gserviceaccount.com" \
-          --update-env-vars="RELEASE_COMMIT_SHA=${_COMMIT_SHA}"
+          --update-env-vars="$${ENV_ARG}"
         echo "deployed ${_JOB_ID}"
     waitFor: ["build-image"]
 

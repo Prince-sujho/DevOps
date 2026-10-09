@@ -9,9 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from infra.attribution import referral_prefill
-
-from .helpers import student_profile
+from .helpers import referral_prefill, student_profile
 
 pytestmark = pytest.mark.asyncio
 

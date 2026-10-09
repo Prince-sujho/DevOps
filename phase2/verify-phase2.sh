@@ -2,13 +2,13 @@
 # Local by default. --remote reads GitHub (no writes).
 #
 # Usage: see usage() below — ./verify-phase2.sh [--remote]
-# Arguments: --remote — also check the files actually on sujho/main.
+# Arguments: --remote — also check the files actually on Sujho/platform main.
 # Exit codes: 0 ok; 1 unknown argument, or (via die) remote verification found
 #   a failure.
 usage() {
   cat <<'EOF'
   ./verify-phase2.sh           # validate.py only
-  ./verify-phase2.sh --remote  # also checks the files actually on sujho/main
+  ./verify-phase2.sh --remote  # also checks the files actually on Sujho/platform main
 EOF
 }
 
@@ -31,7 +31,7 @@ python3 "${PHASE2_DIR}/validate.py"
 python3 "${PHASE2_DIR}/jobs/validate.py"
 
 if [ "$REMOTE" -eq 0 ]; then
-  echo "local invariants ok. --remote after the sujho PR merges to main."
+  echo "local invariants ok. --remote after the platform PR merges to main."
   exit 0
 fi
 
@@ -130,8 +130,8 @@ if ! echo "$prod_rollback_body" | grep -q 'environment: production-rollback'; th
   fail=1
 fi
 
-# post-phase0, sujho is the only repo anyone merges into
-for repo in sujho; do
+# post-phase0, platform is the only repo anyone merges into
+for repo in "${PHASE2_REPO}"; do
   methods="$(
     gh api "repos/${ORG}/${repo}/rulesets" --jq \
       '.[] | select(.conditions.ref_name.include[]? == "refs/heads/main") | .id' \
@@ -151,42 +151,28 @@ for repo in sujho; do
   fi
 done
 
-# The Lead approval lives in GitHub Environment settings, not in any file, and
-# GCP trusts these exact Environment names (phase2/scripts/provision-wif.sh).
-# Read them back: reviewers must be set, and `production` must forbid
-# self-review. production-rollback deliberately allows it (IAM-table.md, 4).
-# Output is "<reviewer count> <prevent_self_review>", read-only.
-environment_state() {
-  gh api "repos/${ORG}/${PHASE2_REPO}/environments/$1" --jq '
-    [.protection_rules[]? | select(.type=="required_reviewers")]
-    | "\(map(.reviewers | length) | add // 0) \(map(.prevent_self_review) | any)"
-  ' 2>/dev/null || echo "missing"
-}
-
+# Production safety is not a reviewer on the Environment: this GitHub plan
+# cannot require reviewers on a private repo. Google only accepts a
+# `production` or `production-rollback` run that a Lead started (the WIF
+# pool's condition), and GCP trusts these exact Environment names
+# (phase2/scripts/provision-wif.sh). So the only thing to read back here is
+# that both Environments exist; the main-only branch rule follows below.
 check_environment() {
-  local name="$1" need_no_self_review="$2"
-  local state count prevent
-  state="$(environment_state "$name")"
+  local name="$1" state
+  state="$(
+    gh api "repos/${ORG}/${PHASE2_REPO}/environments/${name}" --jq .name \
+      2>/dev/null || echo "missing"
+  )"
   if [ "$state" = "missing" ]; then
     echo "FAIL Environment ${name}: does not exist on ${PHASE2_REPO}"
     fail=1
-    return 0
-  fi
-  count="${state%% *}"
-  prevent="${state##* }"
-  if [ "$count" -lt 1 ]; then
-    echo "FAIL Environment ${name}: no required reviewers"
-    fail=1
-  elif [ "$need_no_self_review" = "1" ] && [ "$prevent" != "true" ]; then
-    echo "FAIL Environment ${name}: 'Prevent self-review' is off"
-    fail=1
   else
-    echo "ok   Environment ${name}: ${count} reviewer(s), prevent-self-review=${prevent}"
+    echo "ok   Environment ${name}: exists"
   fi
 }
 
-check_environment production 1
-check_environment production-rollback 0
+check_environment production
+check_environment production-rollback
 
 # The Prod OIDC subject is environment:production, with no branch in it, so a
 # Lead approving a run from any other branch gets the same identity. The

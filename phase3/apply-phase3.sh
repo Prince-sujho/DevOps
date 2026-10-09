@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Put Phase 3 weekly jobs on sujho `main` via a PR. Not a merge gate — there
+# Put Phase 3 weekly jobs on platform `main` via a PR. Not a merge gate — there
 # is no --require-checks. Dry-run unless you pass --apply.
 #
 # Mutation: umbrella tests/ci/pipeline.py mutation, self-hosted runner.
-# Eval: Eval-Suite/run.py on sujho. Cases stay in Eval-Suite; no transcripts.
+# Eval: Eval-Suite/run.py on platform. Cases stay in Eval-Suite; no transcripts.
 #
 # Usage: ./apply-phase3.sh [--apply]
 # Arguments: --apply — open the PR on GitHub (default: validate + print plan).
@@ -13,7 +13,7 @@
 usage() {
   cat <<'EOF'
   ./apply-phase3.sh                  # validate + plan; no GitHub
-  ./apply-phase3.sh --apply          # open a PR into sujho `main`
+  ./apply-phase3.sh --apply          # open a PR into platform `main`
 
 There is no --require-checks. These jobs post to a tracking issue.
 EOF
@@ -108,7 +108,7 @@ open_dev_pr() {
 }
 
 login="$(gh api user --jq .login)"
-echo "actor=${login} apply=1 (Phase 3 weekly jobs into sujho/main)"
+echo "actor=${login} apply=1 (Phase 3 weekly jobs into platform/main)"
 
 REPO="${PHASE3_MUTATION_REPOS[0]}"
 echo "==== ${REPO} mutation + eval ===="
