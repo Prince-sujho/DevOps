@@ -77,24 +77,24 @@ def _package_name(group_name: str) -> str:
     return group_name.replace("-", "_")
 
 
-def require_entry(group_name: str, group: dict) -> tuple[str, str]:
-    """The group's entry module and file. Both are required, and the file
+def require_entry(owner_name: str, entry: dict) -> tuple[str, str]:
+    """An entry module and file. Both are required, and the file
     path must be the module path.
 
     Args:
-        group_name: the image_group name, used only in the error.
-        group: the catalog image_group entry.
+        owner_name: catalog group or job name, used only in errors.
+        entry: catalog fields containing the entry module and file.
     Returns:
         (entry_file, entry_module).
     Raises:
         SystemExit: entry_module or entry_file is missing, or the file path
             is not the module path with dots turned into slashes.
     """
-    entry_module = group.get("entry_module") or ""
-    entry_file = group.get("entry_file") or ""
+    entry_module = entry.get("entry_module") or ""
+    entry_file = entry.get("entry_file") or ""
     if not entry_module or not entry_file:
         print(
-            f'error: image group {group_name!r} needs "entry_module" and '
+            f'error: {owner_name!r} needs "entry_module" and '
             '"entry_file" in catalog.jobs.json',
             file=sys.stderr,
         )
@@ -102,7 +102,7 @@ def require_entry(group_name: str, group: dict) -> tuple[str, str]:
     expected = entry_module.replace(".", "/") + ".py"
     if entry_file != expected:
         print(
-            f"error: image group {group_name!r} entry_file {entry_file!r} "
+            f"error: {owner_name!r} entry_file {entry_file!r} "
             f"does not match entry_module {entry_module!r} (expected {expected})",
             file=sys.stderr,
         )
@@ -204,7 +204,9 @@ def resolve_fields(job: dict, group_name: str, group: dict, env: str) -> dict:
     Raises:
         None.
     """
-    entry_file, entry_module = require_entry(group_name, group)
+    entry = job if "entry_module" in job or "entry_file" in job else group
+    entry_owner = f'job {job["id"]}' if entry is job else f"group {group_name!r}"
+    entry_file, entry_module = require_entry(entry_owner, entry)
     return {
         "JOB_ID": job["id"],
         "IMAGE_GROUP": group_name,

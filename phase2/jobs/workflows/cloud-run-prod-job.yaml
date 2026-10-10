@@ -156,8 +156,8 @@ jobs:
               echo "[A-Za-z0-9_.:-] — no commas, spaces or shell characters."
               exit 1
             fi
-            # execute replaces the template args, so the verb has to be here
-            # too. parse_job_args reads the verb, then the entry id.
+            # execute replaces the template args, so restore the entry module
+            # and append the entry id for its dedicated verb.
             RUN_ARGS="-m,$ENTRY_MODULE"
             if [ -n "$ENTRY_ARGS" ]; then
               RUN_ARGS="$RUN_ARGS,$(printf '%s' "$ENTRY_ARGS" | tr ';' ',')"

@@ -18,8 +18,6 @@
     "knowledge-store": {
       "image": "knowledge-store-jobs",
       "dockerfile": "knowledge_store/Dockerfile",
-      "entry_module": "knowledge_store.run",
-      "entry_file": "knowledge_store/run.py",
       "runtime_sa": "knowledge-store-run",
       "cpu": "2",
       "task_timeout": "24h",
@@ -32,34 +30,44 @@
     {
       "id": "knowledge-store-ingest",
       "group": "knowledge-store",
-      "args": ["ingest"],
+      "entry_module": "knowledge_store.jobs.ingest",
+      "entry_file": "knowledge_store/jobs/ingest.py",
+      "args": [],
       "memory": "4Gi",
       "needs_entry_id": true
     },
     {
       "id": "knowledge-store-remove",
       "group": "knowledge-store",
-      "args": ["remove"],
+      "entry_module": "knowledge_store.jobs.remove",
+      "entry_file": "knowledge_store/jobs/remove.py",
+      "args": [],
       "memory": "2Gi",
       "needs_entry_id": true
     },
     {
       "id": "knowledge-store-sessions",
       "group": "knowledge-store",
-      "args": ["sessions"],
+      "entry_module": "knowledge_store.jobs.sessions",
+      "entry_file": "knowledge_store/jobs/sessions.py",
+      "args": [],
       "memory": "2Gi",
       "schedule": "0 * * * *"
     },
     {
       "id": "knowledge-store-import-ncert",
       "group": "knowledge-store",
-      "args": ["import-ncert"],
+      "entry_module": "knowledge_store.jobs.import_ncert",
+      "entry_file": "knowledge_store/jobs/import_ncert.py",
+      "args": [],
       "memory": "2Gi"
     },
     {
       "id": "knowledge-store-import-educart",
       "group": "knowledge-store",
-      "args": ["import-educart"],
+      "entry_module": "knowledge_store.jobs.import_educart",
+      "entry_file": "knowledge_store/jobs/import_educart.py",
+      "args": [],
       "memory": "2Gi"
     },
     {

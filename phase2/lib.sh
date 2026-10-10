@@ -70,6 +70,8 @@ ${BASH_SOURCE%/*}/../tests/outcomes/pytest/collected.json"
 ${BASH_SOURCE%/*}/../tests/unit/infra/__init__.py"
   "tests/unit/infra/test_leases.py:\
 ${BASH_SOURCE%/*}/../tests/unit/infra/test_leases.py"
+  "tests/unit/infra/test_catalog_jobs.py:\
+${BASH_SOURCE%/*}/../tests/unit/infra/test_catalog_jobs.py"
   "tests/unit/whatsapp_adapter/__init__.py:\
 ${BASH_SOURCE%/*}/../tests/unit/whatsapp_adapter/__init__.py"
   "tests/unit/whatsapp_adapter/test_flow_crypto.py:\

@@ -143,12 +143,11 @@ class CatalogTests(unittest.TestCase):
                 f"{job_id} should be run-by-hand only",
             )
 
-    def test_entry_is_the_catalog_field_not_the_job_id(self) -> None:
-        """Every job runs its group's entry module and its own args list.
+    def test_entries_are_explicit_and_match_their_modules(self) -> None:
+        """Every job resolves an explicit entry module and matching path.
 
-        The knowledge-store jobs all start knowledge_store.run plus a verb.
-        A name-prefix guess of knowledge_store/jobs/<verb>.py is not a file
-        on the tree that gets submitted.
+        Knowledge-store jobs name their own module. The probe inherits its
+        shared group's entry module.
 
         Args:
             None.
@@ -160,17 +159,37 @@ class CatalogTests(unittest.TestCase):
         for job in CATALOG["jobs"]:
             group = CATALOG["image_groups"][job["group"]]
             data = lookup(job["id"])
-            self.assertEqual(data["ENTRY_MODULE"], group["entry_module"])
-            self.assertEqual(data["ENTRY_FILE"], group["entry_file"])
+            entry = job if "entry_module" in job else group
+            self.assertEqual(data["ENTRY_MODULE"], entry["entry_module"])
+            self.assertEqual(data["ENTRY_FILE"], entry["entry_file"])
             self.assertEqual(
                 data["ENTRY_FILE"],
-                group["entry_module"].replace(".", "/") + ".py",
+                entry["entry_module"].replace(".", "/") + ".py",
             )
             self.assertEqual(data["ENTRY_ARGS"], ";".join(job["args"]))
-        sessions = lookup("knowledge-store-sessions")
-        self.assertEqual(sessions["ENTRY_MODULE"], "knowledge_store.run")
-        self.assertEqual(sessions["ENTRY_ARGS"], "sessions")
+
+        expected_modules = {
+            "knowledge-store-ingest": "knowledge_store.jobs.ingest",
+            "knowledge-store-remove": "knowledge_store.jobs.remove",
+            "knowledge-store-sessions": "knowledge_store.jobs.sessions",
+            "knowledge-store-import-ncert": "knowledge_store.jobs.import_ncert",
+            "knowledge-store-import-educart": "knowledge_store.jobs.import_educart",
+        }
+        for job_id, module in expected_modules.items():
+            self.assertEqual(lookup(job_id)["ENTRY_MODULE"], module)
+            self.assertEqual(lookup(job_id)["ENTRY_ARGS"], "")
         self.assertEqual(lookup("probe-job")["ENTRY_ARGS"], "")
+
+    def test_knowledge_store_job_name_matches_its_module(self) -> None:
+        """Each knowledge-store job name identifies its explicit module."""
+        prefix = "knowledge-store-"
+        for job in CATALOG["jobs"]:
+            if job["group"] != "knowledge-store":
+                continue
+            verb = job["id"].removeprefix(prefix)
+            self.assertNotEqual(verb, job["id"])
+            module_name = job["entry_module"].rpartition(".")[2]
+            self.assertEqual(module_name, verb.replace("-", "_"))
 
     def test_needs_entry_id_only_on_ingest_and_remove(self) -> None:
         """Only ingest and remove require an entry_id; the others don't.

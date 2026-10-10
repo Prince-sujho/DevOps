@@ -6,13 +6,12 @@ one positional argument is the entry id.
 from __future__ import annotations
 
 import asyncio
-import sys
 
 from infra.catalog import GRAPH_LEASE
 from infra.knowledge.writer import delete_entry_nodes, gc_orphan_concepts
 
 from ..progress import Run
-from .setup import JobContext, graph_client, job_context
+from .setup import JobContext, graph_client, job_context, require_entry_id
 
 
 async def main() -> None:
@@ -23,9 +22,13 @@ async def main() -> None:
     Returns:
         None.
     Raises:
-        IndexError: no entry id was given on the command line.
+        ValueError: the command line does not contain exactly one entry id.
     """
-    entry_id = sys.argv[1]
+    await run(require_entry_id())
+
+
+async def run(entry_id: str) -> None:
+    """Remove an entry while holding the graph-writer lease."""
     async with job_context() as ctx:
         async with ctx.leases.hold(GRAPH_LEASE, holder=f"remove {entry_id}"):
             await _run_remove(entry_id, ctx)

@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 
 from ..importers.ncert import NcertImporter
-from .setup import job_context
+from .setup import job_context, require_no_args
 
 
 async def main() -> None:
@@ -21,6 +21,12 @@ async def main() -> None:
     Raises:
         None.
     """
+    require_no_args()
+    await run()
+
+
+async def run() -> None:
+    """Import NCERT entries into the catalog."""
     async with job_context() as ctx:
         await NcertImporter(ctx.storage, ctx.registry).run()
 

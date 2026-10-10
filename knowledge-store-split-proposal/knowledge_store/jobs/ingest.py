@@ -6,7 +6,6 @@ one positional argument is the entry id.
 from __future__ import annotations
 
 import asyncio
-import sys
 
 from infra.catalog import GRAPH_LEASE
 from infra.knowledge import CONTENT_EMBEDDED_LABELS
@@ -22,7 +21,7 @@ from ..embedder import Embedder
 from ..extraction import Extractor
 from ..graph.materializer import Materializer
 from ..progress import Run
-from .setup import JobContext, graph_client, job_context
+from .setup import JobContext, graph_client, job_context, require_entry_id
 
 
 async def main() -> None:
@@ -33,9 +32,13 @@ async def main() -> None:
     Returns:
         None.
     Raises:
-        IndexError: no entry id was given on the command line.
+        ValueError: the command line does not contain exactly one entry id.
     """
-    entry_id = sys.argv[1]
+    await run(require_entry_id())
+
+
+async def run(entry_id: str) -> None:
+    """Ingest an entry while holding the graph-writer lease."""
     async with job_context() as ctx:
         async with ctx.leases.hold(GRAPH_LEASE, holder=f"ingest {entry_id}"):
             await _run_ingest(entry_id, ctx)

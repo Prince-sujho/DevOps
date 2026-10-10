@@ -14,7 +14,7 @@ from infra.llm.oai.runtime import OpenAIRuntime
 from infra.skills import SkillLibrary
 
 from ..sessions.extractor import SessionExtractor
-from .setup import JobContext, graph_client, job_context
+from .setup import JobContext, graph_client, job_context, require_no_args
 
 
 async def main() -> None:
@@ -27,6 +27,12 @@ async def main() -> None:
     Raises:
         None.
     """
+    require_no_args()
+    await run()
+
+
+async def run() -> None:
+    """Grade pending sessions while holding the sessions lease."""
     async with job_context() as ctx:
         async with ctx.leases.hold(SESSIONS_LEASE, holder="sessions"):
             await _run_sessions(ctx)

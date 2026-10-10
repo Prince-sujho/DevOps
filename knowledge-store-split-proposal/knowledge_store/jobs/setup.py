@@ -6,10 +6,12 @@ of repeating what run.py's main() used to do once for all of them.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+import sys
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
+from dotenv import load_dotenv
 from infra.firestore import (
     CatalogRepository,
     LeasesRepository,
@@ -23,6 +25,8 @@ from infra.platform.storage import GcsBucket
 
 from ..storage import KnowledgeStoreStorage
 
+load_dotenv()
+
 
 @dataclass
 class JobContext:
@@ -33,6 +37,21 @@ class JobContext:
     registry: CatalogRepository
     usage: UsageRepository
     leases: LeasesRepository
+
+
+def require_entry_id(argv: Sequence[str] | None = None) -> str:
+    """Return the sole entry id argument, or reject an invalid invocation."""
+    args = tuple(sys.argv[1:] if argv is None else argv)
+    if len(args) != 1:
+        raise ValueError("entry job requires exactly one entry id")
+    return args[0]
+
+
+def require_no_args(argv: Sequence[str] | None = None) -> None:
+    """Reject arguments for a job that accepts none."""
+    args = tuple(sys.argv[1:] if argv is None else argv)
+    if args:
+        raise ValueError("this job takes no arguments")
 
 
 @asynccontextmanager
